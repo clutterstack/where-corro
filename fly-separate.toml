@@ -3,7 +3,7 @@
 # Use with a separate Corrosion V2 app; specify which one in the CORRO_BASEURL environment variable
 #
 
-app = "where_corro"
+app = "corrodemo"
 primary_region = "yyz"
 kill_signal = "SIGTERM"
 
@@ -12,7 +12,7 @@ kill_signal = "SIGTERM"
   FLY_CORROSION_APP = "ccorrosion"
   # CORRO_BASEURL = "http://localhost:8081" # For all-in-one deployments
   # superseded by coro_baseurl in runtime.exs: CORRO_BASEURL = "http://top1.nearest.of.ccorrosion.internal:8080"
-  # superseded by host in runtime.exs: PHX_HOST = "where_corro.fly.dev"
+  # superseded by host in runtime.exs: PHX_HOST = "corrodemo.fly.dev"
   PORT = "8080"
 
 [http_service]

@@ -27,34 +27,52 @@ defmodule WhereCorro.CorroCalls do
   This function gets a map from corro_request/2 with status
   """
   defp extract_results(response=%{status: status_code, body: body, headers: headers}) do
-    # %{body: "{\"results\":[{\"rows_affected\":0,\"time\":0.00008258}],\"time\":0.000364641}", headers: [{"content-type", "application/json"}, {"content-length", "70"}, {"date", "Fri, 14 Jul 2023 22:00:35 GMT"}], status_code: 200}
-    # IO.inspect(Jason.decode(body))
-
-    IO.puts("So far we have a response map")
-
+    # Sometimes the body is a string that makes a single JSON thing you can decode.
+    # Sometimes it's more than one, separated by \n.
+    # Split it just in case, decode the pieces, and send things on
+    # to an appropriate function for processing
     bodylist = body |> String.split("\n", trim: true)
-    |> IO.inspect(label: "!!88888 OOOOO !!!")
+    # |> IO.inspect(label: "Before splitting body string")
     |> Enum.map(fn x -> Jason.decode!(x, []) end)
-    IO.inspect(bodylist, label: "NWO LOOOK")
-      # Sometimes the body is a single JSON thing you can decode.
-      # Sometimes it's more than one, separated by \n.
-    #   # The most general thing to return would be that list.
-    #   |> IO.inspect(label: "body")
-    #   |> String.split("\n", trim: true)
-    #   #
-    #   # |> IO.inspect(label: "split string")
-    #   |> Enum.each(fn str ->
-    #     Jason.decode!(str)
-    #     |> IO.inspect(label: "a decoded str")
-    #     end)
+    IO.inspect(bodylist, label: "Split and decoded body")
+    case bodylist do
+      [%{"results" => [%{"error" => errormsg}]}] -> IO.puts("error in extract_results: #{errormsg}")
+        {:error, errormsg}
+        # I'm not sure if we still get a "results" list ever anymore
+      [%{"error" => errormsg}] ->  IO.puts("error in extract_results: #{errormsg}")
+        {:error, errormsg}
+      [%{"columns" => col_list}, %{} | tail] -> IO.puts("looks like a queries endpoint response")
+        process_query_results(%{status: status_code, bodylist: bodylist, headers: headers})
 
+      # The following is what we expect from a transaction.
+      [%{"results" => [%{"rows_affected" => _rows_affected, "time" => _time1}], "time" => _time2}] ->
+        # IO.puts("extract_results got transaction results")
+        process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers})
+      [%{}, %{} | the_rest] -> IO.puts("there was more than one map in there but I didn't plan for this response")
+        {:unexpected_response, bodylist}
+      _ -> IO.puts("extract_results extracted an unexpected body")
 
+    end
 
     # with {:ok, %{"results" => [resultsmap],"time" => _time}} <- Jason.decode(body) do
-    # inspect(resultsmap)
-    # |> IO.inspect(label: "*** in corrosion calls. resultsmap")
-    # {:ok, resultsmap}
+    #   # inspect(resultsmap) |> IO.inspect(label: "*** in corrosion calls. resultsmap")
+    #   {:ok, resultsmap}
     # end
+  end
+
+  def process_query_results(%{status: status_code, bodylist: bodylist, headers: headers}) do
+    # with [%{"columns" => col_list} | tail] <- bodylist do
+
+
+    #   IO.inspect(middle, label: "middle list items in process_query results")
+    # end
+  end
+
+  def process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers}) do
+    with [%{"results" => [%{"rows_affected" => rows_affected, "time" => _time1}], "time" => _time2}] <- bodylist do
+      IO.puts("transaction affected #{rows_affected} rows")
+      {:ok, rows_affected}
+    end
   end
 
   def start_watch(statement) do

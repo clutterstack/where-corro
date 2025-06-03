@@ -1,7 +1,7 @@
 #!/bin/bash
 
-this_fly_app="corro-sandwiches-ex"
-# this_fly_app="where_corro"
+this_fly_app="corrodemo"
+# this_fly_app="corrodemo"
 fly_corrosion_app="ctestcorro"
 fly_corrosion_app="ccorrosion"
 

@@ -38,15 +38,12 @@ defmodule WhereCorro.SandwichSender do
     transactions = ["INSERT OR IGNORE INTO sw (pk, sandwich) VALUES ('#{vm_id}', 'empty')"]
     # IO.inspect(statement)
     case WhereCorro.CorroCalls.execute_corro(transactions) do
-    {:ok, results}
-          -> case results do
-            %{"rows_affected" => rows_affected} ->
-              cond do
-                rows_affected == 0 -> IO.puts("No rows affected; sandwich already initialised")
-                rows_affected > 0 -> IO.puts("Initialised sandwich")
-              end
-              {:ok, []}
-          end
+      {:ok, rows_affected}
+        -> cond do
+          rows_affected == 0 -> IO.puts("No rows affected; sandwich already initialised")
+          rows_affected > 0 -> IO.puts("Initialised sandwich")
+        end
+        {:ok, []}
       {:error, reason}
         -> IO.puts("Couldn't initialise local sandwich!")
         inspect(reason) |> Logger.debug()
@@ -55,21 +52,20 @@ defmodule WhereCorro.SandwichSender do
     end
   end
 
-  # "UPDATE tests SET foo = \"boffo\" WHERE id = 1021"
   def upload_local_sandwich(vm_id, sandwich) do
-    IO.puts("I AM UPLOADING A LOCAL SANDWICH WRONG")
-    transactions = ["UPDATE sw SET sandwich = '#{sandwich}' WHERE pok = '#{vm_id}'"]
+    IO.puts("I AM UPLOADING A LOCAL SANDWICH")
+    transactions = ["UPDATE sw SET sandwich = '#{sandwich}' WHERE pk = '#{vm_id}'"]
     # IO.inspect(transactions)
     case WhereCorro.CorroCalls.execute_corro(transactions) do
-    {:ok, results}
-        -> case results do
-          %{"rows_affected" => rows_affected} ->
-            cond do
-              rows_affected == 0 -> IO.puts("No rows affected; no sandwich uploaded")
-              rows_affected > 0 -> IO.inspect("Updated sandwich to #{sandwich} in Corrosion")
-            end
-            {:ok, []}
-          end
+      {:ok, rows_affected}
+        -> cond do
+          rows_affected == 0 -> IO.puts("No rows affected; no sandwich uploaded")
+          rows_affected > 0 -> IO.inspect("Updated sandwich to #{sandwich} in Corrosion")
+        end
+        {:ok, []}
+      %{"error" => error_message}
+        -> IO.puts("Couldn't upload local sandwich: #{error_message}")
+        {:error, error_message}
     {:error, reason}
       -> IO.puts("Couldn't upload local sandwich!")
       inspect(reason) |> Logger.debug()

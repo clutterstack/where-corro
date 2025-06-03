@@ -33,9 +33,17 @@ defmodule WhereCorro.Discoverer do
   end
 
   def test_remote_sandwiches() do
-    query = "SELECT sandwich_addr FROM sandwich_services WHERE srv_state = 'up'"
+    query = "SELECT vm_id, timestmp FROM sandwich_services WHERE srv_state = 'up'"
     WhereCorro.CorroCalls.query_corro(query)
     |> IO.inspect(label: "in test_remote_sandwiches")
+    #
+    # Next for each row I want to ask the corresponding server for its sandwich
+  end
+
+  def is_older(timestamp, threshold) do
+    datetime = DateTime.utc_now()
+    nowstamp = DateTime.to_unix(datetime)
+
   end
 
   @impl true

@@ -6,6 +6,7 @@ defmodule WhereCorro.FlyDnsReq do
     request_string = ":inet_res.getbyname(#{dnsname}, :txt)"
     # IO.inspect(request_string, label: "request string")
     with {{:ok, {:hostent, _internaldnsname, [], :txt, 1, [output]}}, []} <- Code.eval_string(request_string) do
+      # IO.inspect(Code.eval_string(request_string), label: "in get_txt_record, response was")
       #IO.inspect(output)
       {:ok, output}
     else
@@ -21,20 +22,23 @@ defmodule WhereCorro.FlyDnsReq do
     request_string = ":inet_res.getbyname(#{dnsname}, :aaaa)"
     # IO.inspect(request_string, label: "request string")
     with {{:ok, {:hostent, _internaldnsname, [], :inet6, _, ip_list}}, []} <- Code.eval_string(request_string) do
-      {:ok, ip_list}
+      ip_list |> format_ipv6()
       # IO.inspect(output)
     else
-      {{:error, reason},[]}  -> inspect(reason) |> IO.inspect()
-        IO.puts("get_aaaa_record returned an error")
+      {{:error, :nxdomain}, []} -> IO.puts("get_aaaa_record received an nxdomain error.")
+      {:error, :nxdomain}
+      {{:error, reason},[]} -> inspect(reason) |> IO.inspect()
+        IO.puts("get_aaaa_record received an error other than nxdomain")
         somethingelse -> inspect(somethingelse) |> IO.inspect()
-        IO.puts("get_aaaa_record returned a result I didn't expect")
+        IO.puts("get_aaaa_record received a result I didn't expect")
     end
   end
 
   def get_corro_ipv6() do
     dnsname = "'top1.nearest.of.#{Application.fetch_env!(:where_corro, :fly_corrosion_app)}.internal'"
     get_aaaa_record(dnsname)
-    |> extract_aaaa()
+    |> IO.inspect(label: "result of get_aaaa_record inside get_corro_ipv6")
+    # |> format_ipv6()
   end
 
   def get_corro_instance() do
@@ -77,8 +81,11 @@ defmodule WhereCorro.FlyDnsReq do
     #|> IO.inspect(label: "after reduce in map_from_instance_string")
   end
 
-  defp extract_aaaa(response) do
-    with {:ok, ip_list} <- response do
+  defp format_ipv6(ip_list) do
+    # TODO: generalise this to work when the list has
+    # more than one ip in it
+    # That means return a list of normal-looking ipv6
+    # addresses, I think
       List.first(ip_list)
       |> Tuple.to_list()
       |> Enum.map(fn x -> Integer.to_string(x,16) end)
@@ -86,5 +93,4 @@ defmodule WhereCorro.FlyDnsReq do
       |> String.downcase()
       # |> IO.inspect(label: "Extracted IP")
     end
-  end
 end
