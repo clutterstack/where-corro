@@ -17,15 +17,17 @@ defmodule WhereCorroWeb.Router do
 
   scope "/", WhereCorroWeb do
     pipe_through :browser
-    live "/", ShowOutputLive
-    get "/sandwich", PageController, :sandwich
-    # get "/apii/sandwich", PageController, :show
+
+    live "/", PropagationLive
   end
 
   scope "/api", WhereCorroWeb do
     pipe_through :api
-    get "/sandwich", APIController, :show
+
+    get "/sandwich", APIController, :show  # Keep existing
+    post "/acknowledgment", APIController, :acknowledge  # Add new
   end
+
 
   # Other scopes may use custom stacks.
   # scope "/api", WhereCorroWeb do

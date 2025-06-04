@@ -26,7 +26,7 @@ defmodule WhereCorro.Application do
       #WhereCorro.CorroPort,
       WhereCorro.GenSandwich,
       WhereCorroWeb.Endpoint,
-      WhereCorro.SandwichSender,
+      WhereCorro.Propagation.MessagePropagator,
       WhereCorro.Discoverer,
       WhereCorro.FriendFinder
       # WhereCorro.CheckCorro

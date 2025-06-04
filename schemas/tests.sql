@@ -1,2 +1,20 @@
-CREATE TABLE sw (pk TEXT PRIMARY KEY, sandwich TEXT);
-CREATE TABLE sandwich_services (vm_id TEXT PRIMARY KEY, region TEXT, srv_state TEXT, sandwich TEXT, timestmp TEXT);
+-- Replace or add to existing schema
+CREATE TABLE node_messages (
+  pk TEXT PRIMARY KEY,          -- Keep pk for consistency with existing pattern
+  node_id TEXT NOT NULL,        -- Same as pk but clearer
+  message TEXT NOT NULL,        -- Timestamp as message
+  sequence INTEGER NOT NULL,    -- Message counter
+  timestamp TEXT NOT NULL       -- ISO8601 timestamp
+);
+
+CREATE TABLE acknowledgments (
+  id TEXT PRIMARY KEY,
+  sender_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  receiver_id TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  acknowledged_at TEXT,
+  ack_attempts INTEGER DEFAULT 0,
+  ack_status TEXT DEFAULT 'pending'
+);
+
