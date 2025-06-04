@@ -1,9 +1,9 @@
 #!/bin/bash
 
-this_fly_app="corrodemo"
+this_fly_app="where-corro"
 # this_fly_app="corrodemo"
-fly_corrosion_app="ctestcorro"
-fly_corrosion_app="ccorrosion"
+#fly_corrosion_app="ctestcorro"
+#fly_corrosion_app="ccorrosion"
 
 export \
 CORRO_BASEURL=http://top1.nearest.of.$fly_corrosion_app.internal:8080 \

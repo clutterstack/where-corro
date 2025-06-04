@@ -17,7 +17,7 @@ defmodule WhereCorroWeb.CoreComponents do
   use Phoenix.Component
 
   alias Phoenix.LiveView.JS
-  import WhereCorroWeb.Gettext
+ use Gettext, backend: WhereCorroWeb.Gettext
 
   @doc """
   Renders a modal.

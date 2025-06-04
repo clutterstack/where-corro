@@ -2,6 +2,7 @@ defmodule WhereCorroWeb.PropagationLive do
   use Phoenix.LiveView
   require Logger
   alias WhereCorro.Propagation.MessagePropagator
+  alias WhereCorroWeb.Components.PropagationMap
 
   def render(assigns) do
     ~H"""
@@ -14,6 +15,18 @@ defmodule WhereCorroWeb.PropagationLive do
             Node: <span class="font-mono font-bold"><%= @node_id %></span>
             in <span class="font-mono font-bold"><%= @local_region %></span>
           </p>
+        </div>
+
+        <!-- Propagation Map -->
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 class="text-xl font-semibold mb-4">Propagation Visualization</h2>
+          <div class="h-96">
+            <PropagationMap.propagation_map
+              node_statuses={@node_statuses}
+              local_node_id={@node_id}
+              node_regions={@node_regions}
+            />
+          </div>
         </div>
 
         <!-- Message Sending Section -->
@@ -49,10 +62,10 @@ defmodule WhereCorroWeb.PropagationLive do
           </div>
         </div>
 
-        <!-- Current Propagation Status -->
+        <!-- Current Propagation Status Grid -->
         <div class="bg-white rounded-lg shadow p-6 mb-6">
           <h2 class="text-xl font-semibold mb-4">
-            Current Message Status
+            Node Status Details
             <%= if @last_sent_message do %>
               <span class="text-sm font-normal text-gray-600">
                 (Sequence #<%= @last_sent_message.sequence %>)
@@ -67,6 +80,9 @@ defmodule WhereCorroWeb.PropagationLive do
                 node_status_class(status.status)
               ]}>
                 <div class="font-mono font-bold"><%= node_id %></div>
+                <div class="text-sm text-gray-600">
+                  Region: <%= Map.get(@node_regions, node_id, "unknown") %>
+                </div>
                 <div class="text-sm mt-1">
                   Status: <span class="font-semibold"><%= format_status(status.status) %></span>
                 </div>
@@ -88,11 +104,12 @@ defmodule WhereCorroWeb.PropagationLive do
         <div class="bg-white rounded-lg shadow p-6">
           <h2 class="text-xl font-semibold mb-4">Recent Messages from Other Nodes</h2>
 
-          <div class="space-y-2">
-            <%= for {node_id, msg} <- @received_messages do %>
+          <div class="space-y-2 max-h-64 overflow-y-auto">
+            <%= for {node_id, msg} <- @received_messages |> Enum.sort_by(fn {_, m} -> m.received_at end, {:desc, DateTime}) |> Enum.take(10) do %>
               <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                 <div>
                   <span class="font-mono font-bold"><%= node_id %></span>
+                  <span class="text-xs text-gray-500 ml-1">(<%= Map.get(@node_regions, node_id, "?") %>)</span>
                   <span class="text-sm text-gray-600 ml-2">
                     Seq #<%= msg.sequence %> - <%= msg.message %>
                   </span>
@@ -114,10 +131,13 @@ defmodule WhereCorroWeb.PropagationLive do
           <summary class="cursor-pointer text-sm text-gray-600 hover:text-gray-800">
             Debug Information
           </summary>
-          <div class="mt-2 p-4 bg-gray-100 rounded font-mono text-xs">
+          <div class="mt-2 p-4 bg-gray-100 rounded font-mono text-xs overflow-x-auto">
+            <div>Node ID: <%= @node_id %></div>
+            <div>Local Region: <%= @local_region %></div>
             <div>Other regions: <%= inspect(@other_regions) %></div>
             <div>Corrosion regions: <%= inspect(@corro_regions) %></div>
             <div>Connected nodes: <%= map_size(@node_statuses) %></div>
+            <div>Node regions: <%= inspect(@node_regions) %></div>
           </div>
         </details>
       </div>
@@ -135,13 +155,17 @@ defmodule WhereCorroWeb.PropagationLive do
     Phoenix.PubSub.subscribe(WhereCorro.PubSub, "friend_regions")
     Phoenix.PubSub.subscribe(WhereCorro.PubSub, "corro_regions")
 
+    # Initialize with self in node_regions
+    node_regions = %{node_id => Application.fetch_env!(:where_corro, :fly_region)}
+
     {:ok, assign(socket,
       node_id: node_id,
       local_region: Application.fetch_env!(:where_corro, :fly_region),
       sending: false,
       last_sent_message: nil,
-      node_statuses: %{},  # node_id => %{status: :pending/:acknowledged/:failed, latency: ms}
-      received_messages: %{},  # node_id => latest message
+      node_statuses: %{},
+      received_messages: %{},
+      node_regions: node_regions,  # Map of node_id => region
       other_regions: [],
       corro_regions: []
     )}
@@ -178,7 +202,15 @@ defmodule WhereCorroWeb.PropagationLive do
       received_at: received_at
     }
 
-    {:noreply, put_in(socket.assigns.received_messages[from_node], message)}
+    # Try to discover region from the message or node metadata
+    # For now, we'll need to implement node discovery
+    updated_regions = maybe_add_node_region(socket.assigns.node_regions, from_node)
+
+    {:noreply,
+      socket
+      |> put_in([:assigns, :received_messages, from_node], message)
+      |> assign(:node_regions, updated_regions)
+    }
   end
 
   def handle_info({:ack_received, %{sequence: seq, from: from_node, acknowledged_at: ack_time}}, socket) do
@@ -217,14 +249,22 @@ defmodule WhereCorroWeb.PropagationLive do
   end
 
   def handle_info({:other_regions, regions}, socket) do
-    # Initialize node statuses for all regions
-    all_nodes = get_nodes_in_regions(regions)
+    # Initialize node statuses for discovered nodes
+    nodes = discover_nodes_in_regions(regions)
 
-    node_statuses = Enum.reduce(all_nodes, socket.assigns.node_statuses, fn node_id, acc ->
-      Map.put_new(acc, node_id, %{status: :unknown, latency: nil})
-    end)
+    {node_statuses, node_regions} = Enum.reduce(nodes, {socket.assigns.node_statuses, socket.assigns.node_regions},
+      fn {node_id, region}, {statuses, regions} ->
+        statuses = Map.put_new(statuses, node_id, %{status: :unknown, latency: nil})
+        regions = Map.put(regions, node_id, region)
+        {statuses, regions}
+      end
+    )
 
-    {:noreply, assign(socket, other_regions: regions, node_statuses: node_statuses)}
+    {:noreply, assign(socket,
+      other_regions: regions,
+      node_statuses: node_statuses,
+      node_regions: node_regions
+    )}
   end
 
   def handle_info({:corro_regions, regions}, socket) do
@@ -270,10 +310,77 @@ defmodule WhereCorroWeb.PropagationLive do
     end
   end
 
-  # Placeholder - would need to implement actual node discovery
-  defp get_nodes_in_regions(_regions) do
-    # For now, return empty list
-    # Later, this could query DNS or Corrosion for actual node IDs
-    []
+  # Node discovery helpers
+  defp discover_nodes_in_regions(regions) do
+    # This is a placeholder implementation
+    # In production, you'd query DNS or Corrosion for actual nodes
+    # For now, let's simulate some nodes
+    app_name = Application.get_env(:where_corro, :fly_app_name, "where-corro")
+
+    # Query DNS for instances
+    case get_instances_from_dns(app_name) do
+      {:ok, instances} ->
+        # Filter by regions and create node_id => region map
+        instances
+        |> Enum.filter(fn {_, region} -> region in regions end)
+        |> Enum.into(%{})
+
+      {:error, _} ->
+        # Fallback: empty map
+        %{}
+    end
+  end
+
+  defp get_instances_from_dns(app_name) do
+    # Try to resolve _instances.internal
+    dns_name = "_instances.internal"
+
+    case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do
+      {:ok, {:hostent, _, _, :txt, _, [records]}} ->
+        instances = records
+        |> List.to_string()
+        |> String.split(";")
+        |> Enum.map(&parse_instance_record/1)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.into(%{})
+
+        {:ok, instances}
+
+      {:error, reason} ->
+        Logger.warning("Failed to resolve DNS: #{inspect(reason)}")
+        {:error, reason}
+    end
+  rescue
+    e ->
+      Logger.warning("DNS resolution error: #{inspect(e)}")
+      {:error, e}
+  end
+
+  defp parse_instance_record(record) do
+    # Parse "app=name,region=abc,instance=xyz" format
+    parts = record
+    |> String.split(",")
+    |> Enum.map(&String.split(&1, "="))
+    |> Enum.filter(&(length(&1) == 2))
+    |> Enum.map(fn [k, v] -> {k, v} end)
+    |> Enum.into(%{})
+
+    case parts do
+      %{"instance" => instance_id, "region" => region} ->
+        {instance_id, region}
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_add_node_region(node_regions, node_id) do
+    # If we don't know this node's region yet, try to discover it
+    if Map.has_key?(node_regions, node_id) do
+      node_regions
+    else
+      # This is a simplified approach - in production you'd want
+      # to query the node directly or use DNS discovery
+      Map.put(node_regions, node_id, "unknown")
+    end
   end
 end

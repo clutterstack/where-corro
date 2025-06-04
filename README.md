@@ -17,7 +17,7 @@ fly volumes create corro_data -y -s 1 # (can skip this; fly deploy will do it)
 fly ips allocate-v4 --shared
 fly ips allocate-v6
 <!-- If using a separate app running on Fly.io for corrosion -->
-fly deploy -a corrodemo -c fly-separate.toml --dockerfile Dockerfile-separate
+fly deploy -a where-corro-sep -c fly-separate.toml --dockerfile Dockerfile-separate
 
 <!-- To use corrosion built into the Machine -->
 <!-- Make sure to copy an up-to-date Corrosion binary to the project dir -->
