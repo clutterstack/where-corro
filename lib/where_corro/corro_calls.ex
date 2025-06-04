@@ -3,15 +3,27 @@ defmodule WhereCorro.CorroCalls do
 
   # e.g. WhereCorro.CorroCalls.corro_request("query","SELECT foo FROM TESTS")
   def corro_request(path, statement) do
-    WhereCorro.FlyDnsReq.get_corro_instance()
+    # Only do DNS lookup in production mode
+    corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
+
+    if corro_builtin != "1" do
+      # Production mode - get instance info
+      WhereCorro.FlyDnsReq.get_corro_instance()
+    end
+
     corro_db_url = "#{Application.fetch_env!(:where_corro, :corro_baseurl)}/v1/"
-    with {:ok, %Finch.Response{status: status_code, body: body, headers: headers}} <- Finch.build(:post, "#{corro_db_url}#{path}",[{"content-type", "application/json"}], Jason.encode!(statement))
-      |> Finch.request(WhereCorro.Finch) do
-        extract_results(%{status: status_code, body: body, headers: headers})
+
+    with {:ok, %Finch.Response{status: status_code, body: body, headers: headers}} <-
+           Finch.build(:post, "#{corro_db_url}#{path}", [{"content-type", "application/json"}], Jason.encode!(statement))
+           |> Finch.request(WhereCorro.Finch) do
+      extract_results(%{status: status_code, body: body, headers: headers})
     else
-      {:ok, response} -> IO.inspect(response, label: "Got an unexpected response in query_corro")
-      {:error, resp} -> {:error, resp}
-      another_response -> inspect(another_response) |> IO.inspect(label: "corro_request: response has an unexpected format")
+      {:ok, response} ->
+        IO.inspect(response, label: "Got an unexpected response in query_corro")
+      {:error, resp} ->
+        {:error, resp}
+      another_response ->
+        inspect(another_response) |> IO.inspect(label: "corro_request: response has an unexpected format")
     end
   end
 

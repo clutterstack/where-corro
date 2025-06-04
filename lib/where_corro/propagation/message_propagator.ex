@@ -8,8 +8,22 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   end
 
   def init(_opts) do
-    # Check Corrosion is available
-    WhereCorro.StartupChecks.do_corro_checks()
+    # Only check Corrosion in production/deployed environments
+    # In local development with CORRO_BUILTIN="1", skip DNS checks
+    corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
+
+    if corro_builtin != "1" do
+      # Production mode - check Corrosion availability
+      case WhereCorro.StartupChecks.do_corro_checks() do
+        {:ok, []} ->
+          Logger.info("Corrosion connectivity checks passed")
+        {:error, reason} ->
+          Logger.warning("Corrosion connectivity checks failed: #{inspect(reason)}")
+          # Continue anyway for now - you might want to exit here in production
+      end
+    else
+      Logger.info("Running in builtin Corrosion mode - skipping DNS checks")
+    end
 
     vm_id = Application.fetch_env!(:where_corro, :fly_vm_id)
 

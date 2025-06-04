@@ -2,7 +2,7 @@ defmodule WhereCorro.StartupChecks do
 
   def do_corro_checks() do
     with {:ok, []} <- check_corro_url(),
-    {:ok, []} <- check_corro_app()
+         {:ok, []} <- check_corro_app()
     do
       {:ok, []}
     else
@@ -14,13 +14,12 @@ defmodule WhereCorro.StartupChecks do
     Make sure there's a base url set for corrosion
   """
   def check_corro_url() do
-      corro_baseurl = Application.fetch_env!(:where_corro, :corro_baseurl)
-      IO.inspect(corro_baseurl, label: "corro_baseurl env")
-      cond do
-        corro_baseurl -> {:ok, []}
-              # {:error, resp} -> {:error, resp}
-        true -> {:error, "Looks like CORRO_BASEURL isn't set"}
-      end
+    corro_baseurl = Application.fetch_env!(:where_corro, :corro_baseurl)
+    IO.inspect(corro_baseurl, label: "corro_baseurl env")
+    cond do
+      corro_baseurl -> {:ok, []}
+      true -> {:error, "Looks like CORRO_BASEURL isn't set"}
+    end
   end
 
   @doc """
@@ -29,16 +28,19 @@ defmodule WhereCorro.StartupChecks do
     for corrosion
   """
   def check_corro_app() do
-    unless Application.fetch_env!(:where_corro, :corro_builtin) == "1" do
+    corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
+
+    if corro_builtin != "1" do
       IO.puts("I'm inside check_corro_app")
       corro_app = Application.fetch_env!(:where_corro, :fly_corrosion_app)
       cond do
         corro_app -> {:ok, []}
-              # {:error, resp} -> {:error, resp}
         true -> {:error, "Looks like FLY_CORROSION_APP isn't set"}
       end
+    else
+      # Builtin mode - no separate app needed
+      {:ok, []}
     end
-    {:ok, []}
   end
 
 end
