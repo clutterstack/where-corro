@@ -37,15 +37,26 @@ defmodule WhereCorro.CorroWatch do
     base_url = Application.fetch_env!(:where_corro, :corro_api_url)
     url = "#{base_url}/subscriptions"
 
-    # Use Req with a custom streaming function to maintain the same semantics as original
     parent_pid = self()
 
-    stream_fun = fn {:data, data}, {acc_response, watch_id} ->
-      # Process streaming data immediately (like original)
-      if watch_id do
-        process_streaming_data(watch_name, data, watch_id)
-      end
-      {acc_response, watch_id}
+    # Fixed: Proper streaming function that returns {:cont, acc} or {:halt, acc}
+    stream_fun = fn
+      {:data, data}, acc ->
+        # Send the data to our GenServer to process
+        send(parent_pid, {:stream_data, data})
+        {:cont, acc}
+
+      {:status, status}, acc ->
+        send(parent_pid, {:stream_status, status})
+        {:cont, acc}
+
+      {:headers, headers}, acc ->
+        send(parent_pid, {:stream_headers, headers})
+        {:cont, acc}
+
+      other, acc ->
+        Logger.debug("Unhandled stream event: #{inspect(other)}")
+        {:cont, acc}
     end
 
     case Req.post(url,
@@ -75,12 +86,31 @@ defmodule WhereCorro.CorroWatch do
   end
 
   # Handle streaming data chunks
-  def handle_info({:req_response, :data, data}, state) do
-    process_streaming_data(state.name, data, state.watch_id)
+  def handle_info({:stream_data, data}, state) do
+    if state.watch_id do
+      process_streaming_data(state.name, data, state.watch_id)
+    end
     {:noreply, state}
   end
 
-  # Handle stream completion
+  # Handle stream headers (to extract watch_id)
+  def handle_info({:stream_headers, headers}, state) do
+    case List.keyfind(headers, "corro-query-id", 0) do
+      {"corro-query-id", watch_id} ->
+        Logger.debug("Got watch ID from headers: #{watch_id}")
+        {:noreply, %{state | watch_id: watch_id}}
+      nil ->
+        {:noreply, state}
+    end
+  end
+
+  # Handle stream status
+  def handle_info({:stream_status, status}, state) do
+    Logger.debug("Stream status: #{status}")
+    {:noreply, state}
+  end
+
+  # Handle stream completion - this might not be called with Req streaming
   def handle_info({:req_response, :done}, state) do
     Logger.info("Watch stream completed for '#{state.name}'")
     # Restart the watch after a delay
