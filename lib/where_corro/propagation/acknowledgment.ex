@@ -44,13 +44,7 @@ defmodule WhereCorro.Propagation.Acknowledgment do
 
   defp call_ack_api(sender_node_id, sequence, receiver_node_id) do
     # For local development or cross-app communication
-    base_url = if Application.get_env(:where_corro, :corro_builtin) == "1" do
-      # Local Corrosion setup
-      "http://#{sender_node_id}.vm.#{app_name()}.internal:8080"
-    else
-      # Separate Corrosion app setup
-      "http://#{sender_node_id}.vm.#{app_name()}.internal:8080"
-    end
+    base_url = "http://#{sender_node_id}.vm.#{app_name()}.internal:8080"
 
     url = "#{base_url}/api/acknowledgment"
 

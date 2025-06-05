@@ -16,10 +16,10 @@ defmodule WhereCorro.StartupChecks do
     Make sure there's a base url set for corrosion
   """
   def check_corro_url() do
-    corro_baseurl = Application.fetch_env!(:where_corro, :corro_baseurl)
-    IO.inspect(corro_baseurl, label: "corro_baseurl env")
+    corro_api_url = Application.fetch_env!(:where_corro, :corro_api_url)
+    IO.inspect(corro_api_url, label: "corro_api_url env")
     cond do
-      corro_baseurl -> {:ok, []}
+      corro_api_url -> {:ok, []}
       true -> {:error, "Looks like CORRO_BASEURL isn't set"}
     end
   end

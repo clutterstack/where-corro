@@ -85,11 +85,11 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   # Handle incoming messages from Corrosion watch
   def handle_info({"message_watch", [node_id, message, sequence, timestamp]}, state) do
     # Skip our own messages
-    if node_id != state.node_id do
-      last_sequence = Map.get(state.last_seen_sequences, node_id, -1)
+  if node_id != state.node_id do
+    # Use timestamp-based deduplication instead of sequence checking
+    message_key = {node_id, sequence}
 
-      # Only process if this is a new message
-      if sequence > last_sequence do
+    unless Map.has_key?(state.processed_messages, message_key) do
         Logger.info("Received message #{sequence} from #{node_id}")
 
         # Send acknowledgment

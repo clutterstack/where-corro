@@ -24,18 +24,13 @@ end
 Logger.info("configuring where_corro app vars in runtime.exs")
 
 if System.get_env("CORRO_BUILTIN") == "1" do
-  Logger.info("Setting fly_corrosion_app to "<>System.get_env("FLY_APP_NAME"))
-  Logger.info("Setting corro_baseurl to "<>"http://localhost:8081")
   config :where_corro,
     fly_corrosion_app: System.get_env("FLY_APP_NAME"),
-    corro_baseurl: "http://localhost:8081"
+    corro_api_url: System.get_env("CORRO_API_URL")
 else
-  Logger.info("Setting fly_corrosion_app to "<>System.get_env("FLY_CORROSION_APP"))
-  Logger.info("Setting corro_baseurl to "<>"http://top1.nearest.of.#{System.get_env("FLY_CORROSION_APP")}.internal:8081")
-
   config :where_corro,
     fly_corrosion_app: System.get_env("FLY_CORROSION_APP"),
-    corro_baseurl: "http://top1.nearest.of.#{System.get_env("FLY_CORROSION_APP")}.internal:8080"
+    corro_api_url: "http://top1.nearest.of.#{System.get_env("FLY_CORROSION_APP")}.internal:8080"
 end
 
 config :where_corro,

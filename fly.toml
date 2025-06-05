@@ -16,7 +16,8 @@ destination = "/var/lib/corrosion"
 
 [env]
   CORRO_BUILTIN = "1"
-  # superseded by host in runtime.exs PHX_HOST = "sandwich-builtin.fly.dev"
+  CORRO_API_URL = "http://localhost:8081/v1" # For all-in-one deployments
+
   PORT = "8080"
   RUST_BACKTRACE = "1"
 # RUST_LOG="info,foca=debug"

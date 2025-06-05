@@ -6,7 +6,7 @@ fly_corrosion_app="where-corro"  # Same as this app for local testing
 
 export \
 CORRO_BUILTIN="1" \
-CORRO_BASEURL="http://localhost:8081" \
+CORRO_API_URL="http://localhost:8081/v1" \
 FLY_CORROSION_APP="$fly_corrosion_app" \
 PHX_HOST="$this_fly_app.fly.dev" \
 FLY_APP_NAME="$this_fly_app" \

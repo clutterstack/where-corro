@@ -28,7 +28,7 @@ defmodule WhereCorro.CorroWatch do
 
   def do_watch(watch_name, sql) do
     IO.inspect(sql, label: "In do_watch. sql is")
-    path = "/v1/subscriptions"
+    path = "/subscriptions"
     json_sql = Jason.encode!(sql)
     stream(path, json_sql, %{}, fn
       resp_data, :resp_data, acc ->
@@ -121,7 +121,7 @@ defmodule WhereCorro.CorroWatch do
 
 
   defp url(path) do
-    base = Application.fetch_env!(:where_corro, :corro_baseurl)
+    base = Application.fetch_env!(:where_corro, :corro_api_url)
     IO.inspect(Path.join(base, path), label: "corrosion watch url")
     Path.join(base, path)
   end

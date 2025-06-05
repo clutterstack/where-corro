@@ -11,10 +11,10 @@ defmodule WhereCorro.CorroCalls do
       WhereCorro.FlyDnsReq.get_corro_instance()
     end
 
-    corro_db_url = "#{Application.fetch_env!(:where_corro, :corro_baseurl)}/v1/"
+    corro_api_url = Application.fetch_env!(:where_corro, :corro_api_url)
 
     with {:ok, %Finch.Response{status: status_code, body: body, headers: headers}} <-
-           Finch.build(:post, "#{corro_db_url}#{path}", [{"content-type", "application/json"}], Jason.encode!(statement))
+           Finch.build(:post, "#{corro_api_url}#{path}", [{"content-type", "application/json"}], Jason.encode!(statement))
            |> Finch.request(WhereCorro.Finch) do
       extract_results(%{status: status_code, body: body, headers: headers})
     else

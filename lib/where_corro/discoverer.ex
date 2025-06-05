@@ -35,8 +35,8 @@ defmodule WhereCorro.Discoverer do
 
   def test_remote_sandwiches() do
     query = "SELECT vm_id, timestmp FROM sandwich_services WHERE srv_state = 'up'"
-    WhereCorro.CorroCalls.query_corro(query)
-    |> IO.inspect(label: "in test_remote_sandwiches")
+    WhereCorro.CorroCalls.query_corro(query) |> dbg
+    # |> IO.inspect(label: "in test_remote_sandwiches")
     #
     # Next for each row I want to ask the corresponding server for its sandwich
   end
