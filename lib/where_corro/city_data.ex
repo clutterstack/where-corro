@@ -1,4 +1,4 @@
-defmodule WhereMachines.CityData do
+defmodule WhereCorro.CityData do
   @moduledoc """
   Fly.io region data copied from where_machines.
   Consider extracting this into a shared library later.
