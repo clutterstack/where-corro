@@ -1,4 +1,5 @@
 import Config
+require Logger
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
@@ -20,17 +21,17 @@ if System.get_env("PHX_SERVER") do
   config :where_corro, WhereCorroWeb.Endpoint, server: true
 end
 
-IO.puts("configuring where_corro app vars in runtime.exs")
+Logger.info("configuring where_corro app vars in runtime.exs")
 
 if System.get_env("CORRO_BUILTIN") == "1" do
-  IO.puts("Setting fly_corrosion_app to "<>System.get_env("FLY_APP_NAME"))
-  IO.puts("Setting corro_baseurl to "<>"http://localhost:8081")
+  Logger.info("Setting fly_corrosion_app to "<>System.get_env("FLY_APP_NAME"))
+  Logger.info("Setting corro_baseurl to "<>"http://localhost:8081")
   config :where_corro,
     fly_corrosion_app: System.get_env("FLY_APP_NAME"),
     corro_baseurl: "http://localhost:8081"
 else
-  IO.puts("Setting fly_corrosion_app to "<>System.get_env("FLY_CORROSION_APP"))
-  IO.puts("Setting corro_baseurl to "<>"http://top1.nearest.of.#{System.get_env("FLY_CORROSION_APP")}.internal:8081")
+  Logger.info("Setting fly_corrosion_app to "<>System.get_env("FLY_CORROSION_APP"))
+  Logger.info("Setting corro_baseurl to "<>"http://top1.nearest.of.#{System.get_env("FLY_CORROSION_APP")}.internal:8081")
 
   config :where_corro,
     fly_corrosion_app: System.get_env("FLY_CORROSION_APP"),
@@ -45,7 +46,7 @@ config :where_corro,
   fly_private_ip: System.get_env("FLY_PRIVATE_IP")
 
 if config_env() == :prod do
-  IO.puts("Configuring prod env")
+  Logger.info("Configuring prod env")
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want

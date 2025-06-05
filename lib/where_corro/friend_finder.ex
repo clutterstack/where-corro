@@ -21,7 +21,7 @@ defmodule WhereCorro.FriendFinder do
         #IO.inspect(IEx.Info.info(other_regions))
         Phoenix.PubSub.broadcast(WhereCorro.PubSub, "friend_regions", {:other_regions, other_regions})
         unless Application.fetch_env!(:where_corro, :corro_builtin) == "1" do
-          ##IO.puts("Checking corrosion regions")
+          ##Logger.info("Checking corrosion regions")
             {:ok, corro_regions} = check_corrosion_regions()
             Phoenix.PubSub.broadcast(WhereCorro.PubSub, "corro_regions", {:corro_regions, corro_regions})
             Phoenix.PubSub.broadcast(WhereCorro.PubSub, "nearest_corrosion", {:nearest_corrosion,   WhereCorro.FlyDnsReq.get_corro_instance()})
@@ -46,14 +46,14 @@ defmodule WhereCorro.FriendFinder do
         |> Enum.reject(& match?(^home_region, &1))
         #|> IO.inspect(label: "other regions")
         {:ok, other_regions}
-      {:ok} -> {:ok, []}
+      # {:ok} -> {:ok, []}
       {{:error, :nxdomain},[]} -> {:error, :nxdomain}
     end
   end
 
   def check_corrosion_regions() do
     corro_regions_resolver = ":inet_res.getbyname('regions.#{Application.fetch_env!(:where_corro, :fly_corrosion_app)}.internal', :txt)"
-    # IO.puts corro_regions_resolver
+    # Logger.info corro_regions_resolver
     with {{:ok,  {_, _, _, _, _, region_list}}, []} <- Code.eval_string(corro_regions_resolver) do
       #{{:ok, {:hostent, 'regions.ctestcorro.internal', [], :txt, 1, [['mad,yyz']]}}, []}
       regions = List.first(region_list)

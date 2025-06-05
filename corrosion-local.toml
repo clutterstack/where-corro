@@ -1,0 +1,18 @@
+# corrosion-local.toml
+
+
+[db]
+path = "./corrosion.db"
+schema_paths = ["./schema"]
+
+[gossip]
+addr = "127.0.0.1:8081"
+bootstrap = []
+plaintext = true
+
+[api]
+addr = "127.0.0.1:8080"
+
+[admin]
+# path = "/var/run/corrosion/admin.sock"
+path = "/tmp/corrosion/admin.sock"

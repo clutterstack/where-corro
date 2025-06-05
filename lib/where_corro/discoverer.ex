@@ -1,5 +1,6 @@
 defmodule WhereCorro.Discoverer do
   use GenServer
+  require Logger
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, [], name: Discoverer)
@@ -55,7 +56,7 @@ defmodule WhereCorro.Discoverer do
 
   @impl true
   def handle_info(:check_local_service_msg, _state) do
-    IO.puts("I AM CHECKING THAT I AM WORKING")
+    Logger.info("I AM CHECKING THAT I AM WORKING")
     # check_local_service()
     WhereCorro.GenSandwich.get_sandwich()
     |> inspect |> IO.inspect(label: "GenSandwich.get_sandwich")
@@ -69,9 +70,9 @@ defmodule WhereCorro.Discoverer do
 
   @impl true
   def handle_info(:start_cleaning_msg, _state) do
-    IO.puts("I HAVE RECEIVED A start_cleaning_msg MESSAGE")
+    Logger.info("I HAVE RECEIVED A start_cleaning_msg MESSAGE")
     Task.Supervisor.start_child(WhereCorro.TaskSupervisor, fn ->
-      IO.puts("HEY! I'm inside the task!")
+      Logger.info("HEY! I'm inside the task!")
       # business logic
       do_services_cleaning()
       Process.sleep(5000)
@@ -81,7 +82,7 @@ defmodule WhereCorro.Discoverer do
   end
 
   def do_services_cleaning() do
-    IO.puts("this is where the actual checking of all the services goes")
+    Logger.info("this is where the actual checking of all the services goes")
     # Ask Corrosion for the IP addresses for which srv_state is "up"
     test_remote_sandwiches()
     #

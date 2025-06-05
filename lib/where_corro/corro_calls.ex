@@ -48,21 +48,21 @@ defmodule WhereCorro.CorroCalls do
     |> Enum.map(fn x -> Jason.decode!(x, []) end)
     IO.inspect(bodylist, label: "Split and decoded body")
     case bodylist do
-      [%{"results" => [%{"error" => errormsg}]}] -> IO.puts("error in extract_results: #{errormsg}")
+      [%{"results" => [%{"error" => errormsg}]}] -> Logger.info("error in extract_results: #{errormsg}")
         {:error, errormsg}
         # I'm not sure if we still get a "results" list ever anymore
-      [%{"error" => errormsg}] ->  IO.puts("error in extract_results: #{errormsg}")
+      [%{"error" => errormsg}] ->  Logger.info("error in extract_results: #{errormsg}")
         {:error, errormsg}
-      [%{"columns" => col_list}, %{} | tail] -> IO.puts("looks like a queries endpoint response")
+      [%{"columns" => col_list}, %{} | tail] -> Logger.info("looks like a queries endpoint response")
         process_query_results(%{status: status_code, bodylist: bodylist, headers: headers})
 
       # The following is what we expect from a transaction.
       [%{"results" => [%{"rows_affected" => _rows_affected, "time" => _time1}], "time" => _time2}] ->
-        # IO.puts("extract_results got transaction results")
+        # Logger.info("extract_results got transaction results")
         process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers})
-      [%{}, %{} | the_rest] -> IO.puts("there was more than one map in there but I didn't plan for this response")
+      [%{}, %{} | the_rest] -> Logger.info("there was more than one map in there but I didn't plan for this response")
         {:unexpected_response, bodylist}
-      _ -> IO.puts("extract_results extracted an unexpected body")
+      _ -> Logger.info("extract_results extracted an unexpected body")
 
     end
 
@@ -82,7 +82,7 @@ defmodule WhereCorro.CorroCalls do
 
   def process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers}) do
     with [%{"results" => [%{"rows_affected" => rows_affected, "time" => _time1}], "time" => _time2}] <- bodylist do
-      IO.puts("transaction affected #{rows_affected} rows")
+      Logger.info("transaction affected #{rows_affected} rows")
       {:ok, rows_affected}
     end
   end

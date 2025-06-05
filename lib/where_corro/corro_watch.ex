@@ -22,7 +22,7 @@ defmodule WhereCorro.CorroWatch do
 
   def handle_info({:start_watcher, name, statement}, _opts) do
     do_watch(name, statement) #"SELECT sandwich FROM sw WHERE pk='mad'"
-    IO.puts("Started watch")
+    Logger.info("Started watch")
     {:noreply, {name, statement}}
   end
 
@@ -44,17 +44,17 @@ defmodule WhereCorro.CorroWatch do
     # IO.inspect(watch_name, label: "watch_name in watch_actions")
     with %{"watch_id" => watch_id} <- resp_data do
       case resp_data do
-        %{"eoq" => _time} -> IO.puts("end of query")
-        %{"columns" => [head | tail]} -> IO.puts("got some column names: #{[head | tail]}")
-        %{"row" => [head | tail]} -> IO.puts("got some values for a row")
+        %{"eoq" => _time} -> Logger.info("end of query")
+        %{"columns" => [head | tail]} -> Logger.info("got some column names: #{[head | tail]}")
+        %{"row" => [head | tail]} -> Logger.info("got some values for a row")
           Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, [head | tail]})
-        %{"change" => [change_kind, row_id, [head | tail]]} -> IO.puts("got a changed row")
+        %{"change" => [change_kind, row_id, [head | tail]]} -> Logger.info("got a changed row")
           Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, [head | tail]})
         something_else -> IO.inspect(something_else, label: "got something I didn't plan for in streaming response")
       end
 
     else
-      _ -> IO.puts("No watch_id found; that's unexpected")
+      _ -> Logger.info("No watch_id found; that's unexpected")
     end
   end
 
@@ -97,7 +97,7 @@ defmodule WhereCorro.CorroWatch do
               |> caller_acc.(:resp_data, acc)
             end)
           else
-            _ -> IO.puts("didn't get a corro-query-id in streaming response header")
+            _ -> Logger.info("didn't get a corro-query-id in streaming response header")
           end
           response
       end

@@ -333,7 +333,8 @@ defmodule WhereCorroWeb.PropagationLive do
 
   defp get_instances_from_dns(app_name) do
     # Try to resolve _instances.internal
-    dns_name = "_instances.internal"
+    # dns_name = "_instances.internal"
+    dns_name = "#{app_name}.internal"
 
     case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do
       {:ok, {:hostent, _, _, :txt, _, [records]}} ->

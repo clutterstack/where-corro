@@ -1,20 +1,27 @@
-# gossip_addr and bootstrap should be set by entrypoint script
-# gossip_addr = "fly-local-6pn:8787"
-# bootstrap = ["sandwich-builtin.internal:8787"]
-
-db_path = "/var/lib/corrosion/state.db"
-
-# api_addr = "[::]:8081"
-#api_addr = "127.0.0.1:8081"
-
-admin_path = "/app/admin.sock"
-
-metrics_addr = "0.0.0.0:9090"
-
-
+[db]
+path = "/var/lib/corrosion/state.db"
 schema_paths = ["/app/schemas"]
+
+[gossip]
+addr = "[::]:8787" # the address we bind to
+  # Or was it 
+  # addr = "[fdaa:0:and:so:on:and:so:forth]:8787"
+  # ? Those seem different.
+bootstrap = ["where-corro.internal:8787"] # pseudo # for discovering some cluster members; SWIM fills the rest in if not all are here
+
+plaintext = true   # Cryptography and authz are handled by Fly.io private networking
+max_mtu = 1372     # For Fly.io private network
+disable_gso = true # For Fly.io private network
+
+[api]
+addr = "[::1]:8081" 
+# Can be on loopback if only localhost will ever need it.
+
+[admin]
+path = "/app/admin.sock"
+
+[telemetry]
+prometheus.addr = "0.0.0.0:9090"
 
 [log]
 colors = false
-
-# log_format = "json"

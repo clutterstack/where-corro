@@ -11,9 +11,9 @@ defmodule WhereCorro.FlyDnsReq do
       {:ok, output}
     else
       {{:error, reason},[]}  -> inspect(reason) |> IO.inspect()
-        IO.puts("get_txt_record returned an error")
+        Logger.info("get_txt_record returned an error")
       something_unexpected -> inspect(something_unexpected) |> IO.inspect()
-        IO.puts("get_txt_record returned a result I didn't expect")
+        Logger.info("get_txt_record returned a result I didn't expect")
     end
   end
 
@@ -25,12 +25,12 @@ defmodule WhereCorro.FlyDnsReq do
       ip_list |> format_ipv6()
       # IO.inspect(output)
     else
-      {{:error, :nxdomain}, []} -> IO.puts("get_aaaa_record received an nxdomain error.")
+      {{:error, :nxdomain}, []} -> Logger.info("get_aaaa_record received an nxdomain error.")
       {:error, :nxdomain}
       {{:error, reason},[]} -> inspect(reason) |> IO.inspect()
-        IO.puts("get_aaaa_record received an error other than nxdomain")
+        Logger.info("get_aaaa_record received an error other than nxdomain")
         somethingelse -> inspect(somethingelse) |> IO.inspect()
-        IO.puts("get_aaaa_record received a result I didn't expect")
+        Logger.info("get_aaaa_record received a result I didn't expect")
     end
   end
 

@@ -1,10 +1,10 @@
 -- Replace or add to existing schema
 CREATE TABLE node_messages (
-  pk TEXT PRIMARY KEY,          -- Keep pk for consistency with existing pattern
-  node_id TEXT NOT NULL,        -- Same as pk but clearer
-  message TEXT NOT NULL,        -- Timestamp as message
-  sequence INTEGER NOT NULL,    -- Message counter
-  timestamp TEXT NOT NULL       -- ISO8601 timestamp
+  pk TEXT PRIMARY KEY NOT NULL DEFAULT '',          -- Keep pk for consistency with existing pattern
+  node_id TEXT NOT NULL DEFAULT '',        -- Same as pk but clearer
+  message TEXT NOT NULL DEFAULT '',        -- Timestamp as message
+  sequence INTEGER NOT NULL DEFAULT 0,    -- Message counter
+  timestamp TEXT NOT NULL DEFAULT 0      -- ISO8601 timestamp
 );
 
 CREATE TABLE acknowledgments (

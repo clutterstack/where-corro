@@ -1,4 +1,6 @@
 defmodule WhereCorro.StartupChecks do
+  require Logger
+
 
   def do_corro_checks() do
     with {:ok, []} <- check_corro_url(),
@@ -31,7 +33,7 @@ defmodule WhereCorro.StartupChecks do
     corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
 
     if corro_builtin != "1" do
-      IO.puts("I'm inside check_corro_app")
+      Logger.info("I'm inside check_corro_app")
       corro_app = Application.fetch_env!(:where_corro, :fly_corrosion_app)
       cond do
         corro_app -> {:ok, []}

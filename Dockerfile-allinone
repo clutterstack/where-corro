@@ -105,7 +105,7 @@ COPY /entrypoint.sh /entrypoint
 COPY --chown=corrosion:corrosion --chmod=0755 corrosion.toml /app/corrosion.toml
 COPY --chown=corrosion:corrosion --chmod=0755 schemas /app/schemas
 # Get compiled binary
-COPY --chown=corrosion:corrosion --chmod=0755 corrosion2 /app/corrosion
+COPY --chown=corrosion:corrosion --chmod=0755 corrosion /app/corrosion
 
 #COPY --from=builder --chown=corrosion:corrosion --chmod=0755 /app/overmind-v2.4.0-linux-amd64 /app/overmind
 COPY --chmod=0755 overmind-v2.4.0-linux-amd64 /app/overmind

@@ -5,11 +5,12 @@ defmodule WhereCorroWeb.APIController do
 
   # Keep existing sandwich endpoint for now
   def show(conn, _params) do
-    inspect(WhereCorro.GenSandwich.get_sandwich()) |> IO.puts()
-    with sandwich <- WhereCorro.GenSandwich.get_sandwich() do
+    inspect(WhereCorro.GenSandwich.get_sandwich()) |> Logger.info()
+    sandwich = WhereCorro.GenSandwich.get_sandwich()
+    if is_binary(sandwich) do
       json(conn, %{status: "good", sandwich: sandwich})
     else
-      _ -> json(conn, %{status: "bad", sandwich: "none"})
+      json(conn, %{status: "bad", sandwich: "none"})
     end
   end
   # Add new acknowledgment endpoint
