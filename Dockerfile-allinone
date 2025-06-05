@@ -102,10 +102,10 @@ COPY --from=sqlite3 /usr/bin/sqlite3 /usr/bin/sqlite3
 COPY /entrypoint.sh /entrypoint
 
 # need a config.toml and schemas file prepped in root of project
-COPY --chown=corrosion:corrosion --chmod=0755 corrosion.toml /app/corrosion.toml
-COPY --chown=corrosion:corrosion --chmod=0755 schemas /app/schemas
+COPY --chown=corrosion:corrosion --chmod=0755 corrosion/corrosion.toml /app/corrosion.toml
+COPY --chown=corrosion:corrosion --chmod=0755 corrosion/schemas /app/schemas
 # Get compiled binary
-COPY --chown=corrosion:corrosion --chmod=0755 corrosion /app/corrosion
+COPY --chown=corrosion:corrosion --chmod=0755 corrosion/corrosion /app/corrosion
 
 #COPY --from=builder --chown=corrosion:corrosion --chmod=0755 /app/overmind-v2.4.0-linux-amd64 /app/overmind
 COPY --chmod=0755 overmind-v2.4.0-linux-amd64 /app/overmind

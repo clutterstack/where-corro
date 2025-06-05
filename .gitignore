@@ -46,3 +46,5 @@ aio-from-scratch.sh
 .DS_Store
 
 overmind-v*
+
+.tool-versions

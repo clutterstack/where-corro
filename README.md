@@ -2,12 +2,9 @@
 
 An Elixir client/demo for Corrosion
 
-
-## Run all-in-one, locally
-Build corrosion for amd64 ()
-Copy the corrosion executable to the project dir
-Set some env vars
-iex mix phx.server
+## Run locally
+Build or get a Corrosion binary and copy it to the project dir
+Edit and run `startlocal.sh`, which sets some env vars and runs `iex -S mix phx.server`.
 
 ## Deploy to Fly.io
 fly apps create
@@ -43,18 +40,13 @@ To set `corro_api_url`, `fly_corrosion_app`, and `corro_builtin` in runtime.exs
 * in a similar check in MessagePropagator that Claude created.
 
 ## `CORRO_API_URL`
-Set by startlocal.sh or fly.toml
+Set by startlocal.sh or fly.toml. Either a local addr or one on a separate Corrosion app.
   * used to set app env `corro_api_url`
 
-as app env `corro_api_url`:
+As app env `corro_api_url`:
   * in StartupChecks, to check that it's set.
-  * used to build corro_db_url in CorroCalls, literally by adding `/v1` to it
-  * used to build watch url in CorroWatch, more convoluted but by adding `/v1/subscriptions` I think
-
-
-## `corro_db_url`
-Is corro_api_url with /v1 attached. 
-* used to compose corrosion request url  by tacking `transactions` or whatever to it.
+  * used to compose corrosion request urls by tacking `transactions` or whatever to it.
+  * used to build watch url in CorroWatch, by adding `/subscriptions` 
 
 
 ## `FLY_CORROSION_APP`
