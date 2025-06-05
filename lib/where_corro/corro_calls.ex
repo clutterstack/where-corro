@@ -22,11 +22,13 @@ defmodule WhereCorro.CorroCalls do
 
     base_url = Application.fetch_env!(:where_corro, :corro_api_url)
 
+    # **LOGIC CHANGE**: Force Req to return raw body by disabling auto-JSON parsing
     case Req.post("#{base_url}/#{path}",
       json: statement,
       connect_options: [transport_opts: [inet6: true]],
       retry: :transient,
-      max_retries: 3
+      max_retries: 3,
+      decode_body: false  # **NEW**: Prevent automatic JSON decoding
     ) do
       {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
         parse_corrosion_response(body, path)
@@ -56,34 +58,50 @@ defmodule WhereCorro.CorroCalls do
   @doc """
   Parse the response body from Corrosion API.
 
-  Corrosion returns NDJSON (newline-delimited JSON) for some responses,
-  so we need to handle multiple JSON objects separated by newlines.
+  **LOGIC CHANGE**: Simplified to match the pattern from the previous working version.
+  Corrosion returns NDJSON (newline-delimited JSON) as a string that we split and decode.
   """
   defp parse_corrosion_response(body, endpoint_type) do
     try do
-      parsed_lines = body
+      # Split by newlines and decode each JSON object, just like the old version
+      bodylist = body
       |> String.split("\n", trim: true)
       |> Enum.map(&Jason.decode!/1)
 
-      Logger.debug("Parsed Corrosion response: #{inspect(parsed_lines)}")
+      Logger.debug("Parsed Corrosion response: #{inspect(bodylist)}")
 
-      case parsed_lines do
+      case bodylist do
         # Error responses
-        [%{"error" => error_msg}] ->
-          Logger.warning("Corrosion returned error: #{error_msg}")
-          {:error, error_msg}
-
         [%{"results" => [%{"error" => error_msg}]}] ->
           Logger.warning("Corrosion returned error in results: #{error_msg}")
           {:error, error_msg}
 
-        # Transaction responses
-        [%{"results" => results, "time" => _total_time}] ->
-          process_transaction_results(results)
+        [%{"error" => error_msg}] ->
+          Logger.warning("Corrosion returned error: #{error_msg}")
+          {:error, error_msg}
 
-        # Query responses (columns, rows, eoq)
+        # Transaction responses - matches old pattern exactly
+        [%{"results" => [%{"rows_affected" => rows_affected, "time" => _time1}], "time" => _time2}] ->
+          Logger.debug("Transaction affected #{rows_affected} rows")
+          {:ok, rows_affected}
+
+        # **LOGIC CHANGE**: Handle multiple transaction results
+        [%{"results" => results, "time" => _total_time}] when is_list(results) ->
+          total_rows_affected = results
+          |> Enum.map(fn
+            %{"rows_affected" => count} -> count
+            _ -> 0
+          end)
+          |> Enum.sum()
+          Logger.debug("Transaction(s) affected #{total_rows_affected} rows")
+          {:ok, total_rows_affected}
+
+        # Query responses - columns followed by rows and eoq
         [%{"columns" => columns} | rest] ->
-          process_query_results(columns, rest)
+          rows = rest
+          |> Enum.filter(fn item -> Map.has_key?(item, "row") end)
+          |> Enum.map(fn %{"row" => [_row_id, values]} -> values end)
+          {:ok, %{columns: columns, rows: rows}}
 
         # Empty response
         [] ->
@@ -98,33 +116,14 @@ defmodule WhereCorro.CorroCalls do
     rescue
       e in Jason.DecodeError ->
         Logger.error("Failed to decode JSON from Corrosion: #{inspect(e)}")
+        Logger.error("Raw body was: #{inspect(body)}")
         {:error, :json_decode_error}
 
       exception ->
         Logger.error("Exception parsing Corrosion response: #{inspect(exception)}")
+        Logger.error("Raw body was: #{inspect(body)}")
         {:error, {:parse_exception, exception}}
     end
-  end
-
-  defp process_transaction_results(results) when is_list(results) do
-    total_rows_affected = results
-    |> Enum.map(fn
-      %{"rows_affected" => count} -> count
-      _ -> 0
-    end)
-    |> Enum.sum()
-
-    Logger.debug("Transaction(s) affected #{total_rows_affected} rows")
-    {:ok, total_rows_affected}
-  end
-
-  defp process_query_results(columns, rest) do
-    # Extract rows from the response, filtering out eoq markers
-    rows = rest
-    |> Enum.filter(fn item -> Map.has_key?(item, "row") end)
-    |> Enum.map(fn %{"row" => [_row_id, values]} -> values end)
-
-    {:ok, %{columns: columns, rows: rows}}
   end
 
   def start_watch(statement) do

@@ -28,7 +28,7 @@ defmodule WhereCorro.Discoverer do
     IO.inspect(sandwich_addr, label: "sandwich_addr")
     vm_id = Application.fetch_env!(:where_corro, :fly_vm_id)
     transactions = ["REPLACE INTO sandwich_services (vm_id, region, sandwich_addr, srv_state, sandwich, timestmp) VALUES (\"#{vm_id}\", \"#{region}\", \"#{sandwich_addr}\", \"#{status}\", \"#{sandwich}\", \"#{timestamp}\")"]
-    IO.inspect("updated local service status to #{status}")
+    Logger.info("updated local service status to #{status}")
     WhereCorro.CorroCalls.execute_corro(transactions)
     # vm_id TEXT PRIMARY KEY, region TEXT, srv_state TEXT, sandwich TEXT, timestmp TEXT
   end
