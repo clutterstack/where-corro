@@ -11,125 +11,128 @@ defmodule WhereCorro.CorroWatch do
   require Logger
 
   def start_link({name, statement}) do
-    # This is the function that gets run by the supervisor when I run the server
     GenServer.start_link(WhereCorro.CorroWatch, {name, statement})
   end
 
   def init({name, statement}) do
     Process.send(self(), {:start_watcher, name, statement}, [])
-    {:ok, {name, statement}}
+    {:ok, %{name: name, statement: statement, watch_id: nil}}
   end
 
-  def handle_info({:start_watcher, name, statement}, _opts) do
-    do_watch(name, statement) #"SELECT sandwich FROM sw WHERE pk='mad'"
-    Logger.info("Started watch")
-    {:noreply, {name, statement}}
+  def handle_info({:start_watcher, name, statement}, state) do
+    case start_streaming_watch(name, statement) do
+      {:ok, watch_id} ->
+        Logger.info("Started watch '#{name}' with ID: #{watch_id}")
+        {:noreply, %{state | watch_id: watch_id}}
+
+      {:error, reason} ->
+        Logger.error("Failed to start watch '#{name}': #{inspect(reason)}")
+        # Retry after a delay
+        Process.send_after(self(), {:start_watcher, name, statement}, 5_000)
+        {:noreply, state}
+    end
   end
 
-  def do_watch(watch_name, sql) do
-    IO.inspect(sql, label: "In do_watch. sql is")
-    path = "/subscriptions"
-    json_sql = Jason.encode!(sql)
-    stream(path, json_sql, %{}, fn
-      resp_data, :resp_data, acc ->
-        # do something with response data and return the accumulator:
-        watch_actions(watch_name, resp_data)
-        acc
+  defp start_streaming_watch(watch_name, statement) do
+    base_url = Application.fetch_env!(:where_corro, :corro_api_url)
+    url = "#{base_url}/subscriptions"
+
+    # Use Req with a custom streaming function to maintain the same semantics as original
+    parent_pid = self()
+
+    stream_fun = fn {:data, data}, {acc_response, watch_id} ->
+      # Process streaming data immediately (like original)
+      if watch_id do
+        process_streaming_data(watch_name, data, watch_id)
+      end
+      {acc_response, watch_id}
+    end
+
+    case Req.post(url,
+      json: statement,
+      connect_options: [transport_opts: [inet6: true]],
+      into: stream_fun,
+      receive_timeout: :infinity
+    ) do
+      {:ok, %Req.Response{status: 200, headers: headers}} ->
+        case List.keyfind(headers, "corro-query-id", 0) do
+          {"corro-query-id", watch_id} ->
+            Logger.info("Started streaming watch '#{watch_name}' with ID: #{watch_id}")
+            {:ok, watch_id}
+          nil ->
+            Logger.error("No corro-query-id header in response")
+            {:error, :no_watch_id}
+        end
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        Logger.error("HTTP error #{status} starting watch: #{inspect(body)}")
+        {:error, {:http_error, status}}
+
+      {:error, reason} ->
+        Logger.error("Failed to start streaming watch: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  # Handle streaming data chunks
+  def handle_info({:req_response, :data, data}, state) do
+    process_streaming_data(state.name, data, state.watch_id)
+    {:noreply, state}
+  end
+
+  # Handle stream completion
+  def handle_info({:req_response, :done}, state) do
+    Logger.info("Watch stream completed for '#{state.name}'")
+    # Restart the watch after a delay
+    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 1_000)
+    {:noreply, %{state | watch_id: nil}}
+  end
+
+  # Handle stream errors
+  def handle_info({:stream_error, error}, state) do
+    Logger.error("Stream error for watch '#{state.name}': #{inspect(error)}")
+    # Restart the watch after a delay
+    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 5_000)
+    {:noreply, %{state | watch_id: nil}}
+  end
+
+  defp process_streaming_data(watch_name, data, watch_id) do
+    # Split by newlines and process each JSON object
+    data
+    |> String.split("\n", trim: true)
+    |> Enum.each(fn line ->
+      case Jason.decode(line) do
+        {:ok, json_data} ->
+          enhanced_data = Map.put(json_data, "watch_id", watch_id)
+          handle_watch_event(watch_name, enhanced_data)
+
+        {:error, reason} ->
+          Logger.warning("Failed to decode JSON line in stream: #{line}, error: #{inspect(reason)}")
+      end
     end)
-    {:ok, []}
   end
 
-  def watch_actions(watch_name, resp_data) do
-    # IO.inspect(resp_data, label: "resp_data in watch_actions")
-    # IO.inspect(watch_name, label: "watch_name in watch_actions")
-    with %{"watch_id" => watch_id} <- resp_data do
-      case resp_data do
-        %{"eoq" => _time} -> Logger.info("end of query")
-        %{"columns" => [head | tail]} -> Logger.info("got some column names: #{[head | tail]}")
-        %{"row" => [head | tail]} -> Logger.info("got some values for a row")
-          Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, [head | tail]})
-        %{"change" => [change_kind, row_id, [head | tail]]} -> Logger.info("got a changed row")
-          Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, [head | tail]})
-        something_else -> IO.inspect(something_else, label: "got something I didn't plan for in streaming response")
-      end
+  defp handle_watch_event(watch_name, data) do
+    case data do
+      %{"eoq" => _time} ->
+        Logger.debug("End of query for watch '#{watch_name}'")
 
-    else
-      _ -> Logger.info("No watch_id found; that's unexpected")
+      %{"columns" => columns} ->
+        Logger.debug("Got column names for watch '#{watch_name}': #{inspect(columns)}")
+
+      %{"row" => [_row_id | values]} ->
+        Logger.debug("Got row data for watch '#{watch_name}': #{inspect(values)}")
+        Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, values})
+
+      %{"change" => [change_type, _row_id, values, _change_id]} ->
+        Logger.debug("Got #{change_type} change for watch '#{watch_name}': #{inspect(values)}")
+        Phoenix.PubSub.broadcast(WhereCorro.PubSub, "from_corro", {watch_name, values})
+
+      %{"error" => error_msg} ->
+        Logger.error("Error in watch '#{watch_name}': #{error_msg}")
+
+      other ->
+        Logger.debug("Unhandled watch event for '#{watch_name}': #{inspect(other)}")
     end
-  end
-
-  @doc """
-  Runs Req.post!/2 with a streaming function in place
-  of the default request/response one for the :finch_request option.
-
-  https://hexdocs.pm/req/Req.Steps.html#run_finch/1-request-options
-
-  This function, stream/4, calls Req.post!/2
-    which calls finch_fun/4
-      which calls Finch.stream/5
-        which uses finch_acc as its stream/1 accumulator function
-          which is what passes stuff to the function passed as its
-          caller_acc argument to do something with
-  """
-  def stream(path, json_sql, acc, caller_acc) do
-    # this function has to take the following options because it's being used as the
-    # :finch_request option in Req.post!/2
-    finch_fun = fn request, finch_req, finch_name, finch_opts ->
-      finch_acc = fn #the stream/1 accumulator function
-        {:status, status}, response ->
-          # IO.inspect(response, label: "response")
-          %Req.Response{response | status: status}
-        {:headers, headers}, response ->
-          # IO.inspect(response, label: "response")
-          # IO.inspect(headers, label: "headers")
-          %Req.Response{response | headers: headers}
-        {:data, data}, response ->
-          # IO.inspect(response, label: "response")
-          # IO.inspect(data, label: "data")
-          # IO.inspect(response)
-          with {"corro-query-id", watch_id} <- Enum.find(response.headers, fn {_a, _} -> _a = "corro-query-id" end) do
-            data
-            |> String.split("\n", trim: true)
-            # |> IO.inspect(label: "split string")
-            |> Enum.each(fn str ->
-              Jason.decode!(str)
-              |> Map.put("watch_id", watch_id)
-              |> caller_acc.(:resp_data, acc)
-            end)
-          else
-            _ -> Logger.info("didn't get a corro-query-id in streaming response header")
-          end
-          response
-      end
-
-      # https://hexdocs.pm/finch/Finch.html#stream/5
-      # stream(Finch.Request.t(), name(), acc, stream(acc), keyword())
-      # So resp is the accumulator and finch_acc is the stream/1 accumulator
-      case Finch.stream(finch_req, finch_name, Req.Response.new(), finch_acc, [finch_opts, receive_timeout: :infinity]) do
-        {:ok, response} -> IO.inspect(response, label: "Finch.stream got an {:ok, response} tuple. response:")
-          {request, response}
-        {:error, exception} -> inspect(exception)
-        |> IO.inspect(label: "Finch.stream got an exception")
-          {request, exception}
-      end
-    end
-
-    post_stream_req(path, finch_fun, json_sql)
-
-  end
-
-
-
-  defp url(path) do
-    base = Application.fetch_env!(:where_corro, :corro_api_url)
-    IO.inspect(Path.join(base, path), label: "corrosion watch url")
-    Path.join(base, path)
-  end
-
-  @doc """
-  Use Req to make a Finch.stream request.
-  """
-  def post_stream_req(path, finch_fun, json_sql) do
-    Req.post!(url(path), headers: [{"content-type", "application/json"}], body: json_sql, connect_options: [transport_opts: [inet6: true]], finch_request: finch_fun)
   end
 end

@@ -1,7 +1,16 @@
 defmodule WhereCorro.CorroCalls do
   require Logger
 
-  # e.g. WhereCorro.CorroCalls.corro_request("query","SELECT foo FROM TESTS")
+  @doc """
+  Make a request to the Corrosion API
+
+  ## Examples
+      iex> WhereCorro.CorroCalls.corro_request("queries", "SELECT foo FROM tests")
+      {:ok, %{columns: ["foo"], rows: [["bar"]]}}
+
+      iex> WhereCorro.CorroCalls.execute_corro(["INSERT INTO tests VALUES (1, 'test')"])
+      {:ok, 1}
+  """
   def corro_request(path, statement) do
     # Only do DNS lookup in production mode
     corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
@@ -11,19 +20,28 @@ defmodule WhereCorro.CorroCalls do
       WhereCorro.FlyDnsReq.get_corro_instance()
     end
 
-    corro_api_url = Application.fetch_env!(:where_corro, :corro_api_url)
+    base_url = Application.fetch_env!(:where_corro, :corro_api_url)
 
-    with {:ok, %Finch.Response{status: status_code, body: body, headers: headers}} <-
-           Finch.build(:post, "#{corro_api_url}#{path}", [{"content-type", "application/json"}], Jason.encode!(statement))
-           |> Finch.request(WhereCorro.Finch) do
-      extract_results(%{status: status_code, body: body, headers: headers})
-    else
-      {:ok, response} ->
-        IO.inspect(response, label: "Got an unexpected response in query_corro")
-      {:error, resp} ->
-        {:error, resp}
-      another_response ->
-        inspect(another_response) |> IO.inspect(label: "corro_request: response has an unexpected format")
+    case Req.post("#{base_url}/#{path}",
+      json: statement,
+      connect_options: [transport_opts: [inet6: true]],
+      retry: :transient,
+      max_retries: 3
+    ) do
+      {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
+        parse_corrosion_response(body, path)
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        Logger.error("Corrosion HTTP error #{status}: #{inspect(body)}")
+        {:error, {:http_error, status, body}}
+
+      {:error, %Req.TransportError{reason: reason}} ->
+        Logger.error("Network error connecting to Corrosion: #{inspect(reason)}")
+        {:error, :network_error}
+
+      {:error, reason} ->
+        Logger.error("Unexpected error from Corrosion: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -36,59 +54,80 @@ defmodule WhereCorro.CorroCalls do
   end
 
   @doc """
-  This function gets a map from corro_request/2 with status
+  Parse the response body from Corrosion API.
+
+  Corrosion returns NDJSON (newline-delimited JSON) for some responses,
+  so we need to handle multiple JSON objects separated by newlines.
   """
-  defp extract_results(response=%{status: status_code, body: body, headers: headers}) do
-    # Sometimes the body is a string that makes a single JSON thing you can decode.
-    # Sometimes it's more than one, separated by \n.
-    # Split it just in case, decode the pieces, and send things on
-    # to an appropriate function for processing
-    bodylist = body |> String.split("\n", trim: true)
-    # |> IO.inspect(label: "Before splitting body string")
-    |> Enum.map(fn x -> Jason.decode!(x, []) end)
-    IO.inspect(bodylist, label: "Split and decoded body")
-    case bodylist do
-      [%{"results" => [%{"error" => errormsg}]}] -> Logger.info("error in extract_results: #{errormsg}")
-        {:error, errormsg}
-        # I'm not sure if we still get a "results" list ever anymore
-      [%{"error" => errormsg}] ->  Logger.info("error in extract_results: #{errormsg}")
-        {:error, errormsg}
-      [%{"columns" => col_list}, %{} | tail] -> Logger.info("looks like a queries endpoint response")
-        process_query_results(%{status: status_code, bodylist: bodylist, headers: headers})
+  defp parse_corrosion_response(body, endpoint_type) do
+    try do
+      parsed_lines = body
+      |> String.split("\n", trim: true)
+      |> Enum.map(&Jason.decode!/1)
 
-      # The following is what we expect from a transaction.
-      [%{"results" => [%{"rows_affected" => _rows_affected, "time" => _time1}], "time" => _time2}] ->
-        # Logger.info("extract_results got transaction results")
-        process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers})
-      [%{}, %{} | the_rest] -> Logger.info("there was more than one map in there but I didn't plan for this response")
-        {:unexpected_response, bodylist}
-      _ -> Logger.info("extract_results extracted an unexpected body")
+      Logger.debug("Parsed Corrosion response: #{inspect(parsed_lines)}")
 
+      case parsed_lines do
+        # Error responses
+        [%{"error" => error_msg}] ->
+          Logger.warning("Corrosion returned error: #{error_msg}")
+          {:error, error_msg}
+
+        [%{"results" => [%{"error" => error_msg}]}] ->
+          Logger.warning("Corrosion returned error in results: #{error_msg}")
+          {:error, error_msg}
+
+        # Transaction responses
+        [%{"results" => results, "time" => _total_time}] ->
+          process_transaction_results(results)
+
+        # Query responses (columns, rows, eoq)
+        [%{"columns" => columns} | rest] ->
+          process_query_results(columns, rest)
+
+        # Empty response
+        [] ->
+          Logger.warning("Empty response from Corrosion")
+          {:error, :empty_response}
+
+        # Unexpected format
+        other ->
+          Logger.warning("Unexpected response format: #{inspect(other)}")
+          {:error, {:unexpected_format, other}}
+      end
+    rescue
+      e in Jason.DecodeError ->
+        Logger.error("Failed to decode JSON from Corrosion: #{inspect(e)}")
+        {:error, :json_decode_error}
+
+      exception ->
+        Logger.error("Exception parsing Corrosion response: #{inspect(exception)}")
+        {:error, {:parse_exception, exception}}
     end
-
-    # with {:ok, %{"results" => [resultsmap],"time" => _time}} <- Jason.decode(body) do
-    #   # inspect(resultsmap) |> IO.inspect(label: "*** in corrosion calls. resultsmap")
-    #   {:ok, resultsmap}
-    # end
   end
 
-  def process_query_results(%{status: status_code, bodylist: bodylist, headers: headers}) do
-    # with [%{"columns" => col_list} | tail] <- bodylist do
+  defp process_transaction_results(results) when is_list(results) do
+    total_rows_affected = results
+    |> Enum.map(fn
+      %{"rows_affected" => count} -> count
+      _ -> 0
+    end)
+    |> Enum.sum()
 
-
-    #   IO.inspect(middle, label: "middle list items in process_query results")
-    # end
+    Logger.debug("Transaction(s) affected #{total_rows_affected} rows")
+    {:ok, total_rows_affected}
   end
 
-  def process_transaction_results(%{status: status_code, bodylist: bodylist, headers: headers}) do
-    with [%{"results" => [%{"rows_affected" => rows_affected, "time" => _time1}], "time" => _time2}] <- bodylist do
-      Logger.info("transaction affected #{rows_affected} rows")
-      {:ok, rows_affected}
-    end
+  defp process_query_results(columns, rest) do
+    # Extract rows from the response, filtering out eoq markers
+    rows = rest
+    |> Enum.filter(fn item -> Map.has_key?(item, "row") end)
+    |> Enum.map(fn %{"row" => [_row_id, values]} -> values end)
+
+    {:ok, %{columns: columns, rows: rows}}
   end
 
   def start_watch(statement) do
-    DynamicSupervisor.start_child(WhereCorro.WatchSupervisor, {WhereCorro.CorroWatch,statement})
+    DynamicSupervisor.start_child(WhereCorro.WatchSupervisor, {WhereCorro.CorroWatch, statement})
   end
-
 end
