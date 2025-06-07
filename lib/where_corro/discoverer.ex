@@ -25,7 +25,7 @@ defmodule WhereCorro.Discoverer do
     timestamp = DateTime.to_unix(datetime)
     sandwich_addr = Application.fetch_env!(:where_corro, :fly_private_ip)
     # IO.inspect(timestamp, label: "timestamp")
-    IO.inspect(sandwich_addr, label: "sandwich_addr")
+    Logger.debug("sandwich_addr: #{sandwich_addr}")
     vm_id = Application.fetch_env!(:where_corro, :fly_vm_id)
     transactions = ["REPLACE INTO sandwich_services (vm_id, region, sandwich_addr, srv_state, sandwich, timestmp) VALUES (\"#{vm_id}\", \"#{region}\", \"#{sandwich_addr}\", \"#{status}\", \"#{sandwich}\", \"#{timestamp}\")"]
     Logger.info("updated local service status to #{status}")
@@ -35,7 +35,7 @@ defmodule WhereCorro.Discoverer do
 
   def test_remote_sandwiches() do
     query = "SELECT vm_id, timestmp FROM sandwich_services WHERE srv_state = 'up'"
-    WhereCorro.CorroCalls.query_corro(query) |> dbg
+    WhereCorro.CorroCalls.query_corro(query) |> IO.inspect()
     # |> IO.inspect(label: "in test_remote_sandwiches")
     #
     # Next for each row I want to ask the corresponding server for its sandwich
@@ -56,10 +56,10 @@ defmodule WhereCorro.Discoverer do
 
   @impl true
   def handle_info(:check_local_service_msg, _state) do
-    Logger.info("I AM CHECKING THAT I AM WORKING")
+    Logger.debug("check_local_service_msg")
     # check_local_service()
     WhereCorro.GenSandwich.get_sandwich()
-    |> inspect |> IO.inspect(label: "GenSandwich.get_sandwich")
+    # |> inspect |> IO.inspect(label: "GenSandwich.get_sandwich")
     case WhereCorro.GenSandwich.get_sandwich() do
       %{sandwich: sandwich} -> corro_service_update("up", sandwich)
       _ -> corro_service_update("down", "unknown")
@@ -70,9 +70,9 @@ defmodule WhereCorro.Discoverer do
 
   @impl true
   def handle_info(:start_cleaning_msg, _state) do
-    Logger.info("I HAVE RECEIVED A start_cleaning_msg MESSAGE")
+    Logger.debug("start_cleaning_msg rec'd in discoverer")
     Task.Supervisor.start_child(WhereCorro.TaskSupervisor, fn ->
-      Logger.info("HEY! I'm inside the task!")
+      Logger.debug("HEY! I'm inside the task!")
       # business logic
       do_services_cleaning()
       Process.sleep(5000)
@@ -82,7 +82,7 @@ defmodule WhereCorro.Discoverer do
   end
 
   def do_services_cleaning() do
-    Logger.info("this is where the actual checking of all the services goes")
+    Logger.debug("this is where the actual checking of all the services goes")
     # Ask Corrosion for the IP addresses for which srv_state is "up"
     test_remote_sandwiches()
     #

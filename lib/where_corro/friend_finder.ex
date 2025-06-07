@@ -47,8 +47,8 @@ defmodule WhereCorro.FriendFinder do
       Logger.warning("Invalid FLY_APP_NAME: #{inspect(this_app)}, skipping DNS lookup")
       {:ok, []}  # Return empty list for local development
     else
-      IO.inspect("FLY_APP_NAME is #{this_app}")
-      IO.inspect("fly_region is #{home_region}")
+      Logger.debug("FLY_APP_NAME is #{this_app}")
+      Logger.debug("fly_region is #{home_region}")
 
       app_regions_resolver = ":inet_res.getbyname('regions.#{this_app}.internal', :txt)"
 
