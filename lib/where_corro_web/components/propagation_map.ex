@@ -59,7 +59,9 @@ defmodule WhereCorroWeb.Components.PropagationMap do
 
       <rect width="100%" height="100%" fill="#f9fafb" />
 
-            <g id="ne_110m_ocean">
+      <!-- World map SVG paths placeholder - replace with your actual paths -->
+      <g id="world_map_paths">
+                    <g id="ne_110m_ocean">
         <path d="M 508.86 108.99 503.48 101.62 513.48 96.21 517.58 96.64 517.57 100.18 511.51 101.61 513.81 104.89 521.33 109.73 517.3 109.89 519.31 118.56 512.7 118.77 509.06 117.19 508.86 108.99 Z"
           stroke="#DAA520"
           stroke-width="1"
@@ -72,18 +74,29 @@ defmodule WhereCorroWeb.Components.PropagationMap do
           fill="#444444"
           fill-rule="evenodd"
         />
+</g>
       </g>
 
-
+      <!-- Grid lines -->
       <g stroke="#e5e7eb" stroke-width="0.5" opacity="0.5">
         <%= for x <- 0..8 do %><line x1={#{x * 100}} y1="0" x2={#{x * 100}} y2={@h} /><% end %>
         <%= for y <- 0..3 do %><line x1="0" y1={#{y * 100}} x2={@w} y2={#{y * 100}} /><% end %>
       </g>
 
+      <!-- Connection lines between nodes -->
       <%= for connection <- @connections do %>
         <g>
-          <line x1={connection.x1} y1={connection.y1} x2={connection.x2} y2={connection.y2} stroke={connection.color} stroke-width="2" opacity="0.6" class={connection.class} />
-          <%= if connection.latency_label do %>
+          <line
+            x1={connection.x1}
+            y1={connection.y1}
+            x2={connection.x2}
+            y2={connection.y2}
+            stroke={connection.color}
+            stroke-width="2"
+            opacity="0.6"
+            class={connection.class}
+          />
+          <%= if Map.has_key?(connection, :latency_label) and connection.latency_label do %>
             <text x={connection.latency_label.x} y={connection.latency_label.y} text-anchor="middle" class="latency-label">
               <%= connection.latency_label.text %>
             </text>
@@ -91,6 +104,7 @@ defmodule WhereCorroWeb.Components.PropagationMap do
         </g>
       <% end %>
 
+      <!-- Node circles -->
       <%= for node <- @nodes do %>
         <g transform={"translate(#{node.x}, #{node.y})"}>
           <circle r="12" fill={node.fill} stroke={node.stroke} stroke-width="2">
@@ -107,6 +121,7 @@ defmodule WhereCorroWeb.Components.PropagationMap do
         </g>
       <% end %>
 
+      <!-- Legend -->
       <g transform="translate(10, 10)">
         <rect width="150" height="120" fill="white" stroke="#e5e7eb" rx="5" opacity="0.9" />
         <text x="10" y="20" font-size="14" font-weight="bold" fill="#374151">Status</text>
@@ -118,7 +133,7 @@ defmodule WhereCorroWeb.Components.PropagationMap do
             ] do %>
           <g transform={"translate(10, #{offset})"}>
             <circle cx="10" cy="0" r="6" fill={"url(#" <> gradient <> ")"} />
-            <text x="25" y="4" font-size="12" fill="#374151">{label}</text>
+            <text x="25" y="4" font-size="12" fill="#374151"><%= label %></text>
           </g>
         <% end %>
       </g>
@@ -145,12 +160,13 @@ defmodule WhereCorroWeb.Components.PropagationMap do
   defp generate_connections(node_statuses, node_regions, local_coords) do
     Enum.flat_map(node_statuses, fn {node_id, status} ->
       case get_node_coordinates(node_id, node_regions) do
-        nil -> []
+        nil ->
+          []
         node_coords ->
           {x1, y1} = local_coords
           {x2, y2} = node_coords
 
-          connection = %{
+          base_connection = %{
             x1: x1,
             y1: y1,
             x2: x2,
@@ -159,15 +175,20 @@ defmodule WhereCorroWeb.Components.PropagationMap do
             class: if(status.status == :pending, do: "propagation-line", else: "")
           }
 
-          label =
+          # Only add latency_label if latency exists
+          final_connection =
             if status.latency do
               {lx, ly} = midpoint(local_coords, node_coords)
-              Map.put(connection, :latency_label, %{x: lx, y: ly - 5, text: "#{status.latency}ms"})
+              Map.put(base_connection, :latency_label, %{
+                x: lx,
+                y: ly - 5,
+                text: "#{status.latency}ms"
+              })
             else
-              connection
+              base_connection
             end
 
-          [label]
+          [final_connection]
       end
     end)
   end
@@ -175,43 +196,50 @@ defmodule WhereCorroWeb.Components.PropagationMap do
   defp generate_nodes(all_statuses, node_regions) do
     Enum.flat_map(all_statuses, fn {node_id, status} ->
       case get_node_coordinates(node_id, node_regions) do
-        nil -> []
+        nil ->
+          []
         {x, y} ->
-          [
-            %{
-              x: x,
-              y: y,
-              fill: node_gradient_fill(status.status),
-              stroke: node_stroke_color(status.status),
-              animate: status.status == :pending,
-              label: node_id,
-              region: Map.get(node_regions, node_id, "?")
-            }
-          ]
+          [%{
+            x: x,
+            y: y,
+            fill: node_gradient_fill(status.status),
+            stroke: node_stroke_color(status.status),
+            animate: status.status == :pending,
+            label: node_id,
+            region: Map.get(node_regions, node_id, "?")
+          }]
       end
     end)
   end
 
   defp get_node_coordinates(node_id, node_regions) do
-    if region = Map.get(node_regions, node_id) do
-      city_to_svg(region)
-    else
-      {cx, cy} = @fallback_center
-      angle = :erlang.phash2(node_id, 360) * :math.pi() / 180
-      x = cx + @fallback_radius * :math.cos(angle)
-      y = cy + @fallback_radius * :math.sin(angle)
-      {x, y}
+    case Map.get(node_regions, node_id) do
+      nil ->
+        # Fallback to circle arrangement for unknown nodes
+        {cx, cy} = @fallback_center
+        angle = :erlang.phash2(node_id, 360) * :math.pi() / 180
+        x = cx + @fallback_radius * :math.cos(angle)
+        y = cy + @fallback_radius * :math.sin(angle)
+        {x, y}
+
+      region ->
+        city_to_svg(region)
     end
   end
 
   defp city_to_svg(city) when is_binary(city) do
     try do
       city_atom = String.to_existing_atom(city)
-      {long, lat} = cities()[city_atom]
-      wgs84_to_svg({long, lat})
+      case cities()[city_atom] do
+        {long, lat} ->
+          wgs84_to_svg({long, lat})
+        nil ->
+          Logger.warning("City coordinates not found for '#{city}'")
+          nil
+      end
     rescue
-      e ->
-        Logger.warn("Unknown city '#{city}': #{inspect(e)}")
+      ArgumentError ->
+        Logger.warning("Unknown city '#{city}' - using fallback coordinates")
         nil
     end
   end
@@ -233,6 +261,7 @@ defmodule WhereCorroWeb.Components.PropagationMap do
 
   defp midpoint({x1, y1}, {x2, y2}), do: {(x1 + x2) / 2, (y1 + y2) / 2}
 
+  # Node appearance functions
   defp node_gradient_fill(:local), do: "url(#localGradient)"
   defp node_gradient_fill(:pending), do: "url(#pendingGradient)"
   defp node_gradient_fill(:acknowledged), do: "url(#ackGradient)"

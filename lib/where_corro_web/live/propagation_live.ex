@@ -138,6 +138,7 @@ defmodule WhereCorroWeb.PropagationLive do
             <div>Corrosion regions: <%= inspect(@corro_regions) %></div>
             <div>Connected nodes: <%= map_size(@node_statuses) %></div>
             <div>Node regions: <%= inspect(@node_regions) %></div>
+            <div>Discovered nodes: <%= inspect(@discovered_nodes) %></div>
           </div>
         </details>
       </div>
@@ -158,16 +159,27 @@ defmodule WhereCorroWeb.PropagationLive do
     # Initialize with self in node_regions
     node_regions = %{node_id => Application.fetch_env!(:where_corro, :fly_region)}
 
+    # **LOGIC CHANGE**: Query Corrosion for existing nodes immediately
+    discovered_nodes = discover_existing_nodes()
+
+    initial_node_statuses = discovered_nodes
+    |> Enum.reject(fn {discovered_node_id, _} -> discovered_node_id == node_id end)
+    |> Enum.map(fn {discovered_node_id, region} -> {discovered_node_id, %{status: :unknown, latency: nil}} end)
+    |> Enum.into(%{})
+
+    updated_regions = discovered_nodes |> Enum.into(node_regions)
+
     {:ok, assign(socket,
       node_id: node_id,
       local_region: Application.fetch_env!(:where_corro, :fly_region),
       sending: false,
       last_sent_message: nil,
-      node_statuses: %{},
+      node_statuses: initial_node_statuses,
       received_messages: %{},
-      node_regions: node_regions,  # Map of node_id => region
+      node_regions: updated_regions,
       other_regions: [],
-      corro_regions: []
+      corro_regions: [],
+      discovered_nodes: discovered_nodes  # **NEW**: Track discovered nodes for debugging
     )}
   end
 
@@ -182,7 +194,7 @@ defmodule WhereCorroWeb.PropagationLive do
 
   # PubSub handlers
   def handle_info({:message_sent, %{sequence: seq, timestamp: ts}}, socket) do
-    # Reset node statuses for new message
+    # **LOGIC CHANGE**: Reset node statuses for new message and mark as pending
     node_statuses = socket.assigns.node_statuses
     |> Enum.map(fn {node_id, _} -> {node_id, %{status: :pending, latency: nil}} end)
     |> Enum.into(%{})
@@ -195,21 +207,21 @@ defmodule WhereCorroWeb.PropagationLive do
   end
 
   def handle_info({:message_received, %{from: from_node, sequence: seq, timestamp: ts, received_at: received_at}}, socket) do
-    # Update received messages
+    # **LOGIC CHANGE**: Update received messages and try to add node to regions
     message = %{
       sequence: seq,
       message: ts,  # timestamp is the message
       received_at: received_at
     }
 
-    # Try to discover region from the message or node metadata
-    # For now, we'll need to implement node discovery
     updated_regions = maybe_add_node_region(socket.assigns.node_regions, from_node)
+    updated_statuses = Map.put_new(socket.assigns.node_statuses, from_node, %{status: :unknown, latency: nil})
 
     {:noreply,
       socket
       |> put_in([:assigns, :received_messages, from_node], message)
       |> assign(:node_regions, updated_regions)
+      |> assign(:node_statuses, updated_statuses)
     }
   end
 
@@ -249,26 +261,58 @@ defmodule WhereCorroWeb.PropagationLive do
   end
 
   def handle_info({:other_regions, regions}, socket) do
-    # Initialize node statuses for discovered nodes
-    nodes = discover_nodes_in_regions(regions)
+    # **LOGIC CHANGE**: Merge with discovered nodes from Corrosion
+    additional_nodes = discover_nodes_in_regions(regions)
+    all_discovered = Map.merge(socket.assigns.discovered_nodes, additional_nodes)
 
-    {node_statuses, node_regions} = Enum.reduce(nodes, {socket.assigns.node_statuses, socket.assigns.node_regions},
+    {node_statuses, node_regions} = Enum.reduce(all_discovered, {socket.assigns.node_statuses, socket.assigns.node_regions},
       fn {node_id, region}, {statuses, regions} ->
-        statuses = Map.put_new(statuses, node_id, %{status: :unknown, latency: nil})
-        regions = Map.put(regions, node_id, region)
-        {statuses, regions}
+        # Skip our own node
+        if node_id != socket.assigns.node_id do
+          statuses = Map.put_new(statuses, node_id, %{status: :unknown, latency: nil})
+          regions = Map.put(regions, node_id, region)
+          {statuses, regions}
+        else
+          {statuses, regions}
+        end
       end
     )
 
     {:noreply, assign(socket,
       other_regions: regions,
       node_statuses: node_statuses,
-      node_regions: node_regions
+      node_regions: node_regions,
+      discovered_nodes: all_discovered
     )}
   end
 
   def handle_info({:corro_regions, regions}, socket) do
     {:noreply, assign(socket, corro_regions: regions)}
+  end
+
+  # **NEW**: Discover existing nodes from Corrosion
+  defp discover_existing_nodes do
+    case WhereCorro.CorroCalls.query_corro("SELECT DISTINCT node_id FROM node_messages WHERE node_id != ''") do
+      {:ok, %{rows: rows}} ->
+        rows
+        |> List.flatten()
+        |> Enum.map(fn node_id ->
+          # Try to get region from app name pattern or use unknown
+          region = extract_region_from_node_id(node_id)
+          {node_id, region}
+        end)
+        |> Enum.into(%{})
+
+      {:error, reason} ->
+        Logger.warning("Failed to query existing nodes: #{inspect(reason)}")
+        %{}
+    end
+  end
+
+  # **NEW**: Extract region from node ID (Fly.io machine IDs don't contain region, so this is a fallback)
+  defp extract_region_from_node_id(node_id) do
+    # For local development
+    if node_id == "localhost", do: "💻", else: "unknown"
   end
 
   # Private helpers
@@ -333,7 +377,6 @@ defmodule WhereCorroWeb.PropagationLive do
 
   defp get_instances_from_dns(app_name) do
     # Try to resolve _instances.internal
-    # dns_name = "_instances.internal"
     dns_name = "#{app_name}.internal"
 
     case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do

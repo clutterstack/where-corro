@@ -1,8 +1,4 @@
 defmodule WhereCorro.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
-  @moduledoc false
-
   use Application
 
   @impl true
@@ -21,15 +17,13 @@ defmodule WhereCorro.Application do
       # Start the Endpoint (http/https)
       {DynamicSupervisor, name: WhereCorro.WatchSupervisor, strategy: :one_for_one},
       {Task.Supervisor, name: WhereCorro.TaskSupervisor},
-      # Start a worker by calling: WhereCorro.Worker.start_link(arg)
-      # {WhereCorro.Worker, arg}
-      #WhereCorro.CorroPort,
       WhereCorro.GenSandwich,
       WhereCorroWeb.Endpoint,
       WhereCorro.Propagation.MessagePropagator,
       WhereCorro.Discoverer,
-      WhereCorro.FriendFinder
-      # WhereCorro.CheckCorro
+      WhereCorro.FriendFinder,
+      # **NEW**: Start the metrics collector
+      WhereCorro.Propagation.MetricsCollector
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

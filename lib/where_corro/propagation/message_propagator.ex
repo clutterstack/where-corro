@@ -30,7 +30,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     # Initialize this node's entry
     init_node_message(vm_id)
 
-    # Start watching for changes from other nodes
+    # **LOGIC CHANGE**: Start watching for changes from other nodes
     WhereCorro.CorroCalls.start_watch({
       "message_watch",
       "SELECT node_id, message, sequence, timestamp FROM node_messages"
@@ -38,7 +38,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
 
     {:ok, %{
       node_id: vm_id,
-      last_seen_sequences: %{}  # Track what we've seen from each node
+      processed_messages: %{}  # **LOGIC CHANGE**: Track processed messages by {node_id, sequence}
     }}
   end
 
@@ -85,18 +85,18 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   # Handle incoming messages from Corrosion watch
   def handle_info({"message_watch", [node_id, message, sequence, timestamp]}, state) do
     # Skip our own messages
-  if node_id != state.node_id do
-    # Use timestamp-based deduplication instead of sequence checking
-    message_key = {node_id, sequence}
+    if node_id != state.node_id do
+      # **LOGIC CHANGE**: Use message key for deduplication
+      message_key = {node_id, sequence}
 
-    unless Map.has_key?(state.processed_messages, message_key) do
+      unless Map.has_key?(state.processed_messages, message_key) do
         Logger.info("Received message #{sequence} from #{node_id}")
 
         # Send acknowledgment
         Acknowledgment.send_ack(node_id, sequence, state.node_id)
 
-        # Update state
-        new_state = put_in(state.last_seen_sequences[node_id], sequence)
+        # **LOGIC CHANGE**: Update processed messages state
+        new_state = put_in(state.processed_messages[message_key], true)
 
         # Broadcast to LiveView
         Phoenix.PubSub.broadcast(WhereCorro.PubSub, "propagation:updates",
@@ -132,7 +132,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   defp get_next_sequence(node_id) do
     # Query current sequence
     case WhereCorro.CorroCalls.query_corro("SELECT sequence FROM node_messages WHERE pk = '#{node_id}'") do
-      {:ok, %{"results" => [%{"sequence" => current}]}} -> current + 1
+      {:ok, %{rows: [[current]]}} -> current + 1  # **LOGIC CHANGE**: Fixed pattern matching
       _ -> 1
     end
   end
