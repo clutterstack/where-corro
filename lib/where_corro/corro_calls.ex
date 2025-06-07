@@ -12,12 +12,25 @@ defmodule WhereCorro.CorroCalls do
       {:ok, 1}
   """
   def corro_request(path, statement) do
-    # Only do DNS lookup in production mode
+    # **LOGIC CHANGE**: Only do DNS lookup in production mode AND with valid app name
     corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
 
     if corro_builtin != "1" do
-      # Production mode - get instance info
-      WhereCorro.FlyDnsReq.get_corro_instance()
+      # Production mode - get instance info, but safely
+      try do
+        fly_corrosion_app = Application.fetch_env!(:where_corro, :fly_corrosion_app)
+
+        # Only attempt DNS lookup if we have a valid app name
+        if fly_corrosion_app && String.trim(fly_corrosion_app) != "" do
+          WhereCorro.FlyDnsReq.get_corro_instance()
+        else
+          Logger.warning("No valid FLY_CORROSION_APP set, skipping DNS lookup")
+        end
+      rescue
+        e ->
+          Logger.warning("DNS lookup failed safely: #{inspect(e)}")
+          # Continue anyway - the base_url should still work
+      end
     end
 
     base_url = Application.fetch_env!(:where_corro, :corro_api_url)

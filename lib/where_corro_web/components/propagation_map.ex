@@ -74,7 +74,7 @@ defmodule WhereCorroWeb.Components.PropagationMap do
           fill="#444444"
           fill-rule="evenodd"
         />
-</g>
+      </g>
       </g>
 
       <!-- Grid lines -->

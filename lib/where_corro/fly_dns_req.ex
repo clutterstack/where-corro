@@ -34,11 +34,18 @@ defmodule WhereCorro.FlyDnsReq do
     end
   end
 
-  def get_corro_ipv6() do
-    dnsname = "'top1.nearest.of.#{Application.fetch_env!(:where_corro, :fly_corrosion_app)}.internal'"
-    get_aaaa_record(dnsname)
-    |> IO.inspect(label: "result of get_aaaa_record inside get_corro_ipv6")
-    # |> format_ipv6()
+    def get_corro_ipv6() do
+    app_name = Application.fetch_env!(:where_corro, :fly_corrosion_app)
+
+    # **LOGIC CHANGE**: Validate app name before constructing DNS name
+    if app_name && String.trim(app_name) != "" do
+      dnsname = "'top1.nearest.of.#{app_name}.internal'"
+      get_aaaa_record(dnsname)
+      |> IO.inspect(label: "result of get_aaaa_record inside get_corro_ipv6")
+    else
+      Logger.warning("Invalid fly_corrosion_app: #{inspect(app_name)}")
+      {:error, :invalid_app_name}
+    end
   end
 
   def get_corro_instance() do
