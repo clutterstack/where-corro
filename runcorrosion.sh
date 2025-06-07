@@ -2,4 +2,4 @@
 
 cd ./corrosion
 
-./corrosion agent -c config-local.toml
+./corrosion-mac agent -c config-local.toml

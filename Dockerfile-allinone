@@ -61,15 +61,14 @@ RUN mix release
 
 ## For Corrosion:
 # just sqlite3 -- update this if Corrosion dockerfile gets updated
-FROM keinos/sqlite3:3.42.0 as sqlite3
-
+# FROM keinos/sqlite3:3.42.0 as sqlite3
 
 # start a new build stage so that the final image will only contain
 # the compiled release and other runtime necessities
 FROM ${RUNNER_IMAGE}
 
 RUN apt-get update -y && apt-get install -y libstdc++6 openssl libncurses5 locales \
-tmux lsof \
+tmux lsof sqlite3 \
 nano procps dnsutils curl \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
@@ -89,27 +88,29 @@ WORKDIR "/app"
 # set runner ENV
 ENV MIX_ENV="prod"
 
-# Only copy the final release from the build stage
+# Only copy the final Phoenix app release from the build stage
 COPY --from=builder --chown=corrosion:corrosion /app/_build/${MIX_ENV}/rel/where_corro ./
 
 #=======Corrosion===========
 # Runtime image
 #FROM debian:bullseye-slim 
 
-COPY --from=sqlite3 /usr/bin/sqlite3 /usr/bin/sqlite3
+#COPY --from=sqlite3 /usr/bin/sqlite3 /usr/bin/sqlite3
 #COPY --from=builder /usr/local/bin/nperf /usr/local/bin/nperf
 
+
+COPY --chmod=0755 overmind-v2.4.0-linux-amd64 /app/overmind
+ADD Procfile /app/
+
+
 COPY /entrypoint.sh /entrypoint
+
+# Get compiled binary
+COPY --chown=corrosion:corrosion --chmod=0755 corrosion/corrosion /app/corrosion
 
 # need a config.toml and schemas file prepped in root of project
 COPY --chown=corrosion:corrosion --chmod=0755 corrosion/corrosion.toml /app/corrosion.toml
 COPY --chown=corrosion:corrosion --chmod=0755 corrosion/schemas /app/schemas
-# Get compiled binary
-COPY --chown=corrosion:corrosion --chmod=0755 corrosion/corrosion /app/corrosion
-
-#COPY --from=builder --chown=corrosion:corrosion --chmod=0755 /app/overmind-v2.4.0-linux-amd64 /app/overmind
-COPY --chmod=0755 overmind-v2.4.0-linux-amd64 /app/overmind
-ADD Procfile /app/
 
 ENV OVERMIND_NO_PORT="1"
 ENV OVERMIND_ANY_CAN_DIE="1"

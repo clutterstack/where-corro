@@ -1,2 +1,2 @@
-corrosion: /app/corrosion agent
+corrosion: /app/corrosion agent --config /app/corrosion.toml
 elixir: /app/bin/server

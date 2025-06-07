@@ -20,7 +20,7 @@ destination = "/var/lib/corrosion"
 
   PORT = "8080"
   RUST_BACKTRACE = "1"
-# RUST_LOG="info,foca=debug"
+  RUST_LOG="info,foca=debug"
 
 [[services]]
   internal_port = 8080

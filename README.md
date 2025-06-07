@@ -67,3 +67,35 @@ Set in startlocal.sh. Used when Corrosion isn't on the same app as the client.
 * fly_vm_id: System.get_env("FLY_MACHINE_ID"),
 * fly_app_name: System.get_env("FLY_APP_NAME"),
 * fly_private_ip: System.get_env("FLY_PRIVATE_IP")
+
+
+## Building Corrosion
+
+This may have worked to build x86_64 on a Mac:
+
+`docker run --rm -v $(pwd):/app -w /app flyio/docker-rust-cargo:main sh -c "apt-get update && apt-get install -y build-essential && cargo build --release"`
+
+
+(the problem with other Docker images or trying other cross-compilation methods arises from Corrosion needing such an old pinned Rust version)
+
+
+## Troubleshooting
+
+### identity equal to our own
+
+```
+2025-06-07T02:38:46Z app[17814e31a54d18] lhr [info]corrosion | 2025-06-07T02:38:46.824395Z ERROR corro_agent::broadcast: error handling foca data: Received data from something claiming to have an identity equal to our own
+```
+
+Check that Machines don't have the same `crsql_site_id`:
+
+```
+root@17814e31a54d18:/app# sqlite3 /var/lib/corrosion/state.db
+SQLite version 3.40.1 2022-12-28 14:03:47
+Enter ".help" for usage hints.
+sqlite> select hex(site_id) from crsql_site_id;
+4C0A819E26EA415EA2B3A9BA230B8029
+sqlite> 
+```
+
+(that wasn't it)
