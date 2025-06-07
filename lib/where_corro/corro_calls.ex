@@ -37,12 +37,13 @@ defmodule WhereCorro.CorroCalls do
 
     # **LOGIC CHANGE**: Force Req to return raw body by disabling auto-JSON parsing
     case Req.post("#{base_url}/#{path}",
-      json: statement,
-      connect_options: [transport_opts: [inet6: true]],
-      retry: :transient,
-      max_retries: 3,
-      decode_body: false  # **NEW**: Prevent automatic JSON decoding
-    ) do
+           json: statement,
+           connect_options: [transport_opts: [inet6: true]],
+           retry: :transient,
+           max_retries: 3,
+           # **NEW**: Prevent automatic JSON decoding
+           decode_body: false
+         ) do
       {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
         parse_corrosion_response(body, path)
 
@@ -77,9 +78,10 @@ defmodule WhereCorro.CorroCalls do
   defp parse_corrosion_response(body, endpoint_type) do
     try do
       # Split by newlines and decode each JSON object, just like the old version
-      bodylist = body
-      |> String.split("\n", trim: true)
-      |> Enum.map(&Jason.decode!/1)
+      bodylist =
+        body
+        |> String.split("\n", trim: true)
+        |> Enum.map(&Jason.decode!/1)
 
       Logger.debug("Parsed Corrosion response: #{inspect(bodylist)}")
 
@@ -94,26 +96,35 @@ defmodule WhereCorro.CorroCalls do
           {:error, error_msg}
 
         # Transaction responses - matches old pattern exactly
-        [%{"results" => [%{"rows_affected" => rows_affected, "time" => _time1}], "time" => _time2}] ->
+        [
+          %{
+            "results" => [%{"rows_affected" => rows_affected, "time" => _time1}],
+            "time" => _time2
+          }
+        ] ->
           Logger.debug("Transaction affected #{rows_affected} rows")
           {:ok, rows_affected}
 
         # **LOGIC CHANGE**: Handle multiple transaction results
         [%{"results" => results, "time" => _total_time}] when is_list(results) ->
-          total_rows_affected = results
-          |> Enum.map(fn
-            %{"rows_affected" => count} -> count
-            _ -> 0
-          end)
-          |> Enum.sum()
+          total_rows_affected =
+            results
+            |> Enum.map(fn
+              %{"rows_affected" => count} -> count
+              _ -> 0
+            end)
+            |> Enum.sum()
+
           Logger.debug("Transaction(s) affected #{total_rows_affected} rows")
           {:ok, total_rows_affected}
 
         # Query responses - columns followed by rows and eoq
         [%{"columns" => columns} | rest] ->
-          rows = rest
-          |> Enum.filter(fn item -> Map.has_key?(item, "row") end)
-          |> Enum.map(fn %{"row" => [_row_id, values]} -> values end)
+          rows =
+            rest
+            |> Enum.filter(fn item -> Map.has_key?(item, "row") end)
+            |> Enum.map(fn %{"row" => [_row_id, values]} -> values end)
+
           {:ok, %{columns: columns, rows: rows}}
 
         # Empty response

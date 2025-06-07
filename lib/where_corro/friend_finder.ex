@@ -21,7 +21,7 @@ defmodule WhereCorro.FriendFinder do
         #IO.inspect(IEx.Info.info(other_regions))
         Phoenix.PubSub.broadcast(WhereCorro.PubSub, "friend_regions", {:other_regions, other_regions})
         unless Application.fetch_env!(:where_corro, :corro_builtin) == "1" do
-          ##Logger.info("Checking corrosion regions")
+          ##Logger.warning("Checking corrosion regions")
             case check_corrosion_regions() do
               {:ok, corro_regions} ->
                 Phoenix.PubSub.broadcast(WhereCorro.PubSub, "corro_regions", {:corro_regions, corro_regions})
@@ -50,11 +50,12 @@ defmodule WhereCorro.FriendFinder do
       Logger.debug("FLY_APP_NAME is #{this_app}")
       Logger.debug("fly_region is #{home_region}")
 
-      app_regions_resolver = ":inet_res.getbyname('regions.#{this_app}.internal', :txt)"
+      # **LOGIC CHANGE**: Call :inet_res.getbyname directly instead of using Code.eval_string
+      hostname = "regions.#{this_app}.internal" |> String.to_charlist()
 
       try do
-        case Code.eval_string(app_regions_resolver) do
-          {{:ok,  {_, _, _, _, _, region_list}},[]} ->
+        case :inet_res.getbyname(hostname, :txt) do
+          {:ok,  {_, _, _, _, _, region_list}} ->
             other_regions = List.first(region_list)
             |> List.to_string()
             |> String.split(",")
@@ -62,8 +63,8 @@ defmodule WhereCorro.FriendFinder do
             |> Enum.reject(& match?(^home_region, &1))
             #|> IO.inspect(label: "other regions")
             {:ok, other_regions}
-          # {:ok} -> {:ok, []}
-          {{:error, :nxdomain},[]} -> {:error, :nxdomain}
+          {:error, :nxdomain} -> {:error, :nxdomain}
+          {:error, reason} -> {:error, reason}
         end
       rescue
         e ->
@@ -81,17 +82,21 @@ defmodule WhereCorro.FriendFinder do
       Logger.warning("Invalid FLY_CORROSION_APP: #{inspect(corro_app)}, skipping DNS lookup")
       {:ok, []}  # Return empty list for local development
     else
-      corro_regions_resolver = ":inet_res.getbyname('regions.#{corro_app}.internal', :txt)"
-      # Logger.info corro_regions_resolver
+      # **LOGIC CHANGE**: Call :inet_res.getbyname directly instead of using Code.eval_string
+      hostname = "regions.#{corro_app}.internal" |> String.to_charlist()
 
       try do
-        with {{:ok,  {_, _, _, _, _, region_list}}, []} <- Code.eval_string(corro_regions_resolver) do
-          #{{:ok, {:hostent, 'regions.ctestcorro.internal', [], :txt, 1, [['mad,yyz']]}}, []}
-          regions = List.first(region_list)
-          |> List.to_string()
-          |> String.split(",")
-          #|> IO.inspect(label: "corro regions")
-          {:ok, regions}
+        case :inet_res.getbyname(hostname, :txt) do
+          {:ok,  {_, _, _, _, _, region_list}} ->
+            #{{:ok, {:hostent, 'regions.ctestcorro.internal', [], :txt, 1, [['mad,yyz']]}}, []}
+            regions = List.first(region_list)
+            |> List.to_string()
+            |> String.split(",")
+            #|> IO.inspect(label: "corro regions")
+            {:ok, regions}
+          {:error, reason} ->
+            Logger.warning("DNS lookup failed: #{inspect(reason)}")
+            {:error, reason}
         end
       rescue
         e ->

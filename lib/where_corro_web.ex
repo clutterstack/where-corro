@@ -43,7 +43,7 @@ defmodule WhereCorroWeb do
         layouts: [html: WhereCorroWeb.Layouts]
 
       import Plug.Conn
-     use Gettext, backend: WhereCorroWeb.Gettext
+      use Gettext, backend: WhereCorroWeb.Gettext
 
       unquote(verified_routes())
     end
@@ -85,7 +85,7 @@ defmodule WhereCorroWeb do
       import Phoenix.HTML
       # Core UI components and translation
       import WhereCorroWeb.CoreComponents
-     use Gettext, backend: WhereCorroWeb.Gettext
+      use Gettext, backend: WhereCorroWeb.Gettext
 
       # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS

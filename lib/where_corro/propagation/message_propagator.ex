@@ -20,6 +20,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
       case safe_corro_checks() do
         {:ok, []} ->
           Logger.info("Corrosion connectivity checks passed")
+
         {:error, reason} ->
           Logger.warning("Corrosion connectivity checks failed: #{inspect(reason)}")
           # Continue anyway for now - you might want to exit here in production
@@ -36,11 +37,13 @@ defmodule WhereCorro.Propagation.MessagePropagator do
       Logger.info("Skipping Corrosion watch in local single-node mode")
     end
 
-    {:ok, %{
-      node_id: node_id,
-      last_seen_sequences: %{},
-      processed_messages: %{}  # **LOGIC CHANGE**: Add deduplication state
-    }}
+    {:ok,
+     %{
+       node_id: node_id,
+       last_seen_sequences: %{},
+       # **LOGIC CHANGE**: Add deduplication state
+       processed_messages: %{}
+     }}
   end
 
   # Called by button in LiveView
@@ -55,13 +58,15 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     sequence = get_next_sequence(state.node_id)
 
     # Update our message in Corrosion
-    transactions = ["""
-    UPDATE node_messages
-    SET message = '#{timestamp}',
-        sequence = #{sequence},
-        timestamp = '#{timestamp}'
-    WHERE pk = '#{state.node_id}'
-    """]
+    transactions = [
+      """
+      UPDATE node_messages
+      SET message = '#{timestamp}',
+          sequence = #{sequence},
+          timestamp = '#{timestamp}'
+      WHERE pk = '#{state.node_id}'
+      """
+    ]
 
     case WhereCorro.CorroCalls.execute_corro(transactions) do
       {:ok, _} ->
@@ -71,7 +76,9 @@ defmodule WhereCorro.Propagation.MessagePropagator do
         MetricsCollector.start_tracking(state.node_id, sequence)
 
         # Broadcast to LiveView
-        Phoenix.PubSub.broadcast(WhereCorro.PubSub, "propagation:#{state.node_id}",
+        Phoenix.PubSub.broadcast(
+          WhereCorro.PubSub,
+          "propagation:#{state.node_id}",
           {:message_sent, %{sequence: sequence, timestamp: timestamp}}
         )
 
@@ -90,25 +97,29 @@ defmodule WhereCorro.Propagation.MessagePropagator do
       # **LOGIC CHANGE**: Use compound key for deduplication
       message_key = {node_id, sequence}
 
-      unless Map.has_key?(state.processed_messages, message_key) do
+      if !Map.has_key?(state.processed_messages, message_key) do
         Logger.info("Received message #{sequence} from #{node_id}")
 
         # Send acknowledgment
         Acknowledgment.send_ack(node_id, sequence, state.node_id)
 
         # **LOGIC CHANGE**: Update state with processed message tracking
-        new_state = state
-        |> put_in([:last_seen_sequences, node_id], sequence)
-        |> put_in([:processed_messages, message_key], true)
+        new_state =
+          state
+          |> put_in([:last_seen_sequences, node_id], sequence)
+          |> put_in([:processed_messages, message_key], true)
 
         # Broadcast to LiveView
-        Phoenix.PubSub.broadcast(WhereCorro.PubSub, "propagation:updates",
-          {:message_received, %{
-            from: node_id,
-            sequence: sequence,
-            timestamp: timestamp,
-            received_at: DateTime.utc_now()
-          }}
+        Phoenix.PubSub.broadcast(
+          WhereCorro.PubSub,
+          "propagation:updates",
+          {:message_received,
+           %{
+             from: node_id,
+             sequence: sequence,
+             timestamp: timestamp,
+             received_at: DateTime.utc_now()
+           }}
         )
 
         {:noreply, new_state}
@@ -147,6 +158,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
         "message_watch",
         "SELECT node_id, message, sequence, timestamp FROM node_messages"
       })
+
       Logger.info("Started Corrosion message watch")
     rescue
       exception ->
@@ -159,10 +171,12 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   end
 
   defp init_node_message(node_id) do
-    transactions = ["""
-    INSERT OR IGNORE INTO node_messages (pk, node_id, message, sequence, timestamp)
-    VALUES ('#{node_id}', '#{node_id}', '', 0, '#{DateTime.utc_now() |> DateTime.to_iso8601()}')
-    """]
+    transactions = [
+      """
+      INSERT OR IGNORE INTO node_messages (pk, node_id, message, sequence, timestamp)
+      VALUES ('#{node_id}', '#{node_id}', '', 0, '#{DateTime.utc_now() |> DateTime.to_iso8601()}')
+      """
+    ]
 
     case WhereCorro.CorroCalls.execute_corro(transactions) do
       {:ok, _} -> Logger.info("Initialized node message entry")
@@ -172,7 +186,9 @@ defmodule WhereCorro.Propagation.MessagePropagator do
 
   defp get_next_sequence(node_id) do
     # Query current sequence
-    case WhereCorro.CorroCalls.query_corro("SELECT sequence FROM node_messages WHERE pk = '#{node_id}'") do
+    case WhereCorro.CorroCalls.query_corro(
+           "SELECT sequence FROM node_messages WHERE pk = '#{node_id}'"
+         ) do
       {:ok, %{"results" => [%{"sequence" => current}]}} -> current + 1
       _ -> 1
     end

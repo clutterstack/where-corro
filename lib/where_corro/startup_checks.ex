@@ -1,11 +1,9 @@
 defmodule WhereCorro.StartupChecks do
   require Logger
 
-
   def do_corro_checks() do
     with {:ok, []} <- check_corro_url(),
-         {:ok, []} <- check_corro_app()
-    do
+         {:ok, []} <- check_corro_app() do
       {:ok, []}
     else
       _ -> {:error, {check_corro_url(), check_corro_app()}}
@@ -18,6 +16,7 @@ defmodule WhereCorro.StartupChecks do
   def check_corro_url() do
     corro_api_url = Application.fetch_env!(:where_corro, :corro_api_url)
     IO.inspect(corro_api_url, label: "corro_api_url env")
+
     cond do
       corro_api_url -> {:ok, []}
       true -> {:error, "Looks like CORRO_BASEURL isn't set"}
@@ -35,6 +34,7 @@ defmodule WhereCorro.StartupChecks do
     if corro_builtin != "1" do
       Logger.info("I'm inside check_corro_app")
       corro_app = Application.fetch_env!(:where_corro, :fly_corrosion_app)
+
       cond do
         corro_app -> {:ok, []}
         true -> {:error, "Looks like FLY_CORROSION_APP isn't set"}
@@ -44,5 +44,4 @@ defmodule WhereCorro.StartupChecks do
       {:ok, []}
     end
   end
-
 end

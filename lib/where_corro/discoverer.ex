@@ -27,7 +27,11 @@ defmodule WhereCorro.Discoverer do
     # IO.inspect(timestamp, label: "timestamp")
     Logger.debug("sandwich_addr: #{sandwich_addr}")
     vm_id = Application.fetch_env!(:where_corro, :fly_vm_id)
-    transactions = ["REPLACE INTO sandwich_services (vm_id, region, sandwich_addr, srv_state, sandwich, timestmp) VALUES (\"#{vm_id}\", \"#{region}\", \"#{sandwich_addr}\", \"#{status}\", \"#{sandwich}\", \"#{timestamp}\")"]
+
+    transactions = [
+      "REPLACE INTO sandwich_services (vm_id, region, sandwich_addr, srv_state, sandwich, timestmp) VALUES (\"#{vm_id}\", \"#{region}\", \"#{sandwich_addr}\", \"#{status}\", \"#{sandwich}\", \"#{timestamp}\")"
+    ]
+
     Logger.info("updated local service status to #{status}")
     WhereCorro.CorroCalls.execute_corro(transactions)
     # vm_id TEXT PRIMARY KEY, region TEXT, srv_state TEXT, sandwich TEXT, timestmp TEXT
@@ -44,13 +48,12 @@ defmodule WhereCorro.Discoverer do
   def is_older(timestamp, threshold) do
     datetime = DateTime.utc_now()
     nowstamp = DateTime.to_unix(datetime)
-
   end
 
   @impl true
   def init(_opts) do
     start_checking()
-    start_cleaning()
+    # start_cleaning()
     {:ok, []}
   end
 
@@ -64,6 +67,7 @@ defmodule WhereCorro.Discoverer do
       %{sandwich: sandwich} -> corro_service_update("up", sandwich)
       _ -> corro_service_update("down", "unknown")
     end
+
     start_checking()
     {:noreply, []}
   end
@@ -71,13 +75,15 @@ defmodule WhereCorro.Discoverer do
   @impl true
   def handle_info(:start_cleaning_msg, _state) do
     Logger.debug("start_cleaning_msg rec'd in discoverer")
+
     Task.Supervisor.start_child(WhereCorro.TaskSupervisor, fn ->
       Logger.debug("HEY! I'm inside the task!")
       # business logic
       do_services_cleaning()
       Process.sleep(5000)
       Process.send(Discoverer, :start_cleaning_msg, [])
-     end)
+    end)
+
     {:noreply, []}
   end
 
@@ -87,5 +93,4 @@ defmodule WhereCorro.Discoverer do
     test_remote_sandwiches()
     #
   end
-
 end

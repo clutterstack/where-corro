@@ -24,10 +24,11 @@ defmodule WhereCorroWeb.Router do
   scope "/api", WhereCorroWeb do
     pipe_through :api
 
-    get "/sandwich", APIController, :show  # Keep existing
-    post "/acknowledgment", APIController, :acknowledge  # Add new
+    # Keep existing
+    get "/sandwich", APIController, :show
+    # Add new
+    post "/acknowledgment", APIController, :acknowledge
   end
-
 
   # Other scopes may use custom stacks.
   # scope "/api", WhereCorroWeb do

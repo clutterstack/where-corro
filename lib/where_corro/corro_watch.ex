@@ -60,16 +60,17 @@ defmodule WhereCorro.CorroWatch do
     end
 
     case Req.post(url,
-      json: statement,
-      connect_options: [transport_opts: [inet6: true]],
-      into: stream_fun,
-      receive_timeout: :infinity
-    ) do
+           json: statement,
+           connect_options: [transport_opts: [inet6: true]],
+           into: stream_fun,
+           receive_timeout: :infinity
+         ) do
       {:ok, %Req.Response{status: 200, headers: headers}} ->
         case List.keyfind(headers, "corro-query-id", 0) do
           {"corro-query-id", watch_id} ->
             Logger.info("Started streaming watch '#{watch_name}' with ID: #{watch_id}")
             {:ok, watch_id}
+
           nil ->
             Logger.error("No corro-query-id header in response")
             {:error, :no_watch_id}
@@ -90,6 +91,7 @@ defmodule WhereCorro.CorroWatch do
     if state.watch_id do
       process_streaming_data(state.name, data, state.watch_id)
     end
+
     {:noreply, state}
   end
 
@@ -99,6 +101,7 @@ defmodule WhereCorro.CorroWatch do
       {"corro-query-id", watch_id} ->
         Logger.debug("Got watch ID from headers: #{watch_id}")
         {:noreply, %{state | watch_id: watch_id}}
+
       nil ->
         {:noreply, state}
     end
@@ -137,7 +140,9 @@ defmodule WhereCorro.CorroWatch do
           handle_watch_event(watch_name, enhanced_data)
 
         {:error, reason} ->
-          Logger.warning("Failed to decode JSON line in stream: #{line}, error: #{inspect(reason)}")
+          Logger.warning(
+            "Failed to decode JSON line in stream: #{line}, error: #{inspect(reason)}"
+          )
       end
     end)
   end

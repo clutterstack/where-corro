@@ -10,10 +10,11 @@ defmodule WhereCorro.Application do
       # Start the PubSub system
       {Phoenix.PubSub, name: WhereCorro.PubSub},
       # Start Finch
-      {Finch, name: WhereCorro.Finch,
-        pools: %{
-            default: [conn_opts: [transport_opts: [inet6: true]]]
-        }},
+      {Finch,
+       name: WhereCorro.Finch,
+       pools: %{
+         default: [conn_opts: [transport_opts: [inet6: true]]]
+       }},
       # Start the Endpoint (http/https)
       {DynamicSupervisor, name: WhereCorro.WatchSupervisor, strategy: :one_for_one},
       {Task.Supervisor, name: WhereCorro.TaskSupervisor},

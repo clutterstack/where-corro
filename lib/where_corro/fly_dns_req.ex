@@ -5,14 +5,18 @@ defmodule WhereCorro.FlyDnsReq do
     # IO.inspect(dnsname, label: "dnsname")
     request_string = ":inet_res.getbyname(#{dnsname}, :txt)"
     # IO.inspect(request_string, label: "request string")
-    with {{:ok, {:hostent, _internaldnsname, [], :txt, 1, [output]}}, []} <- Code.eval_string(request_string) do
+    with {{:ok, {:hostent, _internaldnsname, [], :txt, 1, [output]}}, []} <-
+           Code.eval_string(request_string) do
       # IO.inspect(Code.eval_string(request_string), label: "in get_txt_record, response was")
-      #IO.inspect(output)
+      # IO.inspect(output)
       {:ok, output}
     else
-      {{:error, reason},[]}  -> inspect(reason) |> IO.inspect()
+      {{:error, reason}, []} ->
+        inspect(reason) |> IO.inspect()
         Logger.info("get_txt_record returned an error")
-      something_unexpected -> inspect(something_unexpected) |> IO.inspect()
+
+      something_unexpected ->
+        inspect(something_unexpected) |> IO.inspect()
         Logger.info("get_txt_record returned a result I didn't expect")
     end
   end
@@ -21,25 +25,32 @@ defmodule WhereCorro.FlyDnsReq do
     # IO.inspect(dnsname, label: "dnsname")
     request_string = ":inet_res.getbyname(#{dnsname}, :aaaa)"
     # IO.inspect(request_string, label: "request string")
-    with {{:ok, {:hostent, _internaldnsname, [], :inet6, _, ip_list}}, []} <- Code.eval_string(request_string) do
+    with {{:ok, {:hostent, _internaldnsname, [], :inet6, _, ip_list}}, []} <-
+           Code.eval_string(request_string) do
       ip_list |> format_ipv6()
       # IO.inspect(output)
     else
-      {{:error, :nxdomain}, []} -> Logger.info("get_aaaa_record received an nxdomain error.")
-      {:error, :nxdomain}
-      {{:error, reason},[]} -> inspect(reason) |> IO.inspect()
+      {{:error, :nxdomain}, []} ->
+        Logger.info("get_aaaa_record received an nxdomain error.")
+        {:error, :nxdomain}
+
+      {{:error, reason}, []} ->
+        inspect(reason) |> IO.inspect()
         Logger.info("get_aaaa_record received an error other than nxdomain")
-        somethingelse -> inspect(somethingelse) |> IO.inspect()
+
+      somethingelse ->
+        inspect(somethingelse) |> IO.inspect()
         Logger.info("get_aaaa_record received a result I didn't expect")
     end
   end
 
-    def get_corro_ipv6() do
+  def get_corro_ipv6() do
     app_name = Application.fetch_env!(:where_corro, :fly_corrosion_app)
 
     # **LOGIC CHANGE**: Validate app name before constructing DNS name
     if app_name && String.trim(app_name) != "" do
       dnsname = "'top1.nearest.of.#{app_name}.internal'"
+
       get_aaaa_record(dnsname)
       |> IO.inspect(label: "result of get_aaaa_record inside get_corro_ipv6")
     else
@@ -51,6 +62,7 @@ defmodule WhereCorro.FlyDnsReq do
   def get_corro_instance() do
     ip = get_corro_ipv6()
     everything = get_all_instances()
+
     # IO.inspect("Closest corrosion is #{everything[ip]["instance"]} in #{everything[ip]["region"]} at #{ip}")
     everything[ip]
   end
@@ -70,22 +82,28 @@ defmodule WhereCorro.FlyDnsReq do
       Enum.join(stringlist)
       # |> IO.inspect(label: "joined string")
       |> String.split(";")
-      #|> IO.inspect(label: "resplit string")
+      # |> IO.inspect(label: "resplit string")
       |> Enum.reduce(%{}, fn instance_string, acc ->
-          Map.put(acc, map_from_instance_string(instance_string)["ip"], map_from_instance_string(instance_string))
+        Map.put(
+          acc,
+          map_from_instance_string(instance_string)["ip"],
+          map_from_instance_string(instance_string)
+        )
       end)
+
       # |> IO.inspect()
     end
   end
 
   defp map_from_instance_string(string) do
-    String.split(string,",")
-    #|> IO.inspect(label: "split in map_from_instance_string")
+    String.split(string, ",")
+    # |> IO.inspect(label: "split in map_from_instance_string")
     |> Enum.reduce(%{}, fn pair, acc ->
       [key, value] = String.split(pair, "=")
       Map.put(acc, key, value)
-      end)
-    #|> IO.inspect(label: "after reduce in map_from_instance_string")
+    end)
+
+    # |> IO.inspect(label: "after reduce in map_from_instance_string")
   end
 
   defp format_ipv6(ip_list) do
@@ -93,11 +111,12 @@ defmodule WhereCorro.FlyDnsReq do
     # more than one ip in it
     # That means return a list of normal-looking ipv6
     # addresses, I think
-      List.first(ip_list)
-      |> Tuple.to_list()
-      |> Enum.map(fn x -> Integer.to_string(x,16) end)
-      |> Enum.join(":")
-      |> String.downcase()
-      # |> IO.inspect(label: "Extracted IP")
-    end
+    List.first(ip_list)
+    |> Tuple.to_list()
+    |> Enum.map(fn x -> Integer.to_string(x, 16) end)
+    |> Enum.join(":")
+    |> String.downcase()
+
+    # |> IO.inspect(label: "Extracted IP")
+  end
 end
