@@ -152,11 +152,13 @@ defmodule WhereCorroWeb.PropagationLive do
     # Subscribe to PubSub topics
     node_id = Application.fetch_env!(:where_corro, :fly_vm_id)
 
-    Phoenix.PubSub.subscribe(WhereCorro.PubSub, "propagation:#{node_id}")
-    Phoenix.PubSub.subscribe(WhereCorro.PubSub, "propagation:updates")
-    Phoenix.PubSub.subscribe(WhereCorro.PubSub, "acknowledgments")
-    Phoenix.PubSub.subscribe(WhereCorro.PubSub, "friend_regions")
-    Phoenix.PubSub.subscribe(WhereCorro.PubSub, "corro_regions")
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(WhereCorro.PubSub, "propagation:#{node_id}")
+      Phoenix.PubSub.subscribe(WhereCorro.PubSub, "propagation:updates")
+      Phoenix.PubSub.subscribe(WhereCorro.PubSub, "acknowledgments")
+      Phoenix.PubSub.subscribe(WhereCorro.PubSub, "friend_regions")
+      Phoenix.PubSub.subscribe(WhereCorro.PubSub, "corro_regions")
+    end
 
     # Initialize with self in node_regions
     node_regions = %{node_id => Application.fetch_env!(:where_corro, :fly_region)}
@@ -333,7 +335,7 @@ end
 
     # **LOGIC CHANGE**: Update metrics collector with known nodes
     known_node_ids = Map.keys(node_statuses)
-    WhereCorro.Propagation.MetricsCollector.update_known_nodes(known_node_ids)
+    # WhereCorro.Propagation.MetricsCollector.update_known_nodes(known_node_ids)
 
     {:noreply, assign(socket,
       other_regions: regions,
@@ -379,10 +381,10 @@ end
         |> Enum.into(%{})
 
         # **LOGIC CHANGE**: Update metrics collector immediately with discovered nodes
-        discovered
-        |> Map.keys()
-        |> Enum.reject(&(&1 == Application.fetch_env!(:where_corro, :fly_vm_id)))
-        |> WhereCorro.Propagation.MetricsCollector.update_known_nodes()
+        # discovered
+        # |> Map.keys()
+        # |> Enum.reject(&(&1 == Application.fetch_env!(:where_corro, :fly_vm_id)))
+        # |> WhereCorro.Propagation.MetricsCollector.update_known_nodes()
 
         discovered
 
@@ -442,18 +444,16 @@ end
 
   # Node discovery helpers
   defp discover_nodes_in_regions(regions) do
-    # This is a placeholder implementation
-    # In production, you'd query DNS or Corrosion for actual nodes
-    # For now, let's simulate some nodes
+    Logger.debug("discover_nodes_in_regions called")
     app_name = Application.get_env(:where_corro, :fly_app_name, "where-corro")
 
     # Query DNS for instances
     case get_instances_from_dns(app_name) do
       {:ok, instances} ->
         # Filter by regions and create node_id => region map
-        instances
+        instances |> dbg
         |> Enum.filter(fn {_, region} -> region in regions end)
-        |> Enum.into(%{})
+        |> Enum.into(%{}) |> dbg
 
       {:error, _} ->
         # Fallback: empty map
@@ -470,10 +470,10 @@ end
     case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do
       {:ok, {:hostent, _, _, :txt, _, [records]}} ->
         instances =
-          records
+          records |> dbg
           |> List.to_string()
-          |> String.split(";")
-          |> Enum.map(&parse_instance_record/1)
+          |> String.split(",")  |> dbg
+          |> Enum.map(&parse_instance_record/1) |> dbg
           |> Enum.reject(&is_nil/1)
           |> Enum.into(%{}) |> inspect() |> Logger.info()
 
@@ -491,13 +491,11 @@ end
 
   defp parse_instance_record(record) do
     # Parse "app=name,region=abc,instance=xyz" format
+    # Parse
     parts =
-      record
-      |> String.split(",")
-      |> Enum.map(&String.split(&1, "="))
-      |> Enum.filter(&(length(&1) == 2))
-      |> Enum.map(fn [k, v] -> {k, v} end)
-      |> Enum.into(%{})
+      record |> dbg
+      |> String.split(" ") |> dbg
+
 
     case parts do
       %{"instance" => instance_id, "region" => region} ->

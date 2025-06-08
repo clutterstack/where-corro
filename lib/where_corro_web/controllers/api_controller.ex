@@ -1,7 +1,7 @@
 defmodule WhereCorroWeb.APIController do
   use WhereCorroWeb, :controller
   require Logger
-  alias WhereCorro.Propagation.MetricsCollector
+  # alias WhereCorro.Propagation.MetricsCollector
 
   # Add new acknowledgment endpoint
   def acknowledge(conn, %{
@@ -29,7 +29,7 @@ defmodule WhereCorroWeb.APIController do
     case WhereCorro.CorroCalls.execute_corro(transactions) do
       {:ok, _} ->
         # Update metrics
-        MetricsCollector.record_acknowledgment(sender_id, sequence, receiver_id)
+        # MetricsCollector.record_acknowledgment(sender_id, sequence, receiver_id)
 
         # Broadcast to LiveView
         Phoenix.PubSub.broadcast(

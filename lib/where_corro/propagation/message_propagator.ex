@@ -1,7 +1,7 @@
 defmodule WhereCorro.Propagation.MessagePropagator do
   use GenServer
   require Logger
-  alias WhereCorro.Propagation.{Acknowledgment, MetricsCollector}
+  alias WhereCorro.Propagation.Acknowledgment
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -73,7 +73,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
         Logger.info("Sent message #{sequence} with timestamp #{timestamp}")
 
         # Initialize metrics for this message
-        MetricsCollector.start_tracking(state.node_id, sequence)
+        # MetricsCollector.start_tracking(state.node_id, sequence)
 
         # Broadcast to LiveView
         Phoenix.PubSub.broadcast(
