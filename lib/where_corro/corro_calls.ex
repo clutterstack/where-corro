@@ -2,7 +2,7 @@ defmodule WhereCorro.CorroCalls do
   require Logger
 
   @doc """
-  Make a request to the Corrosion API
+  Make a request to the Corrosion API with retry logic for network issues
 
   ## Examples
       iex> WhereCorro.CorroCalls.corro_request("queries", "SELECT foo FROM tests")
@@ -12,7 +12,13 @@ defmodule WhereCorro.CorroCalls do
       {:ok, 1}
   """
   def corro_request(path, statement) do
-    # **LOGIC CHANGE**: Only do DNS lookup in production mode AND with valid app name
+    # **LOGIC CHANGE**: Use retry wrapper by default
+    corro_request_with_retry(path, statement, 3)
+  end
+
+  # **LOGIC CHANGE**: New function with explicit retry logic
+  def corro_request_with_retry(path, statement, retries) when retries > 0 do
+    # Only do DNS lookup in production mode AND with valid app name
     corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
 
     if corro_builtin != "1" do
@@ -29,19 +35,18 @@ defmodule WhereCorro.CorroCalls do
       rescue
         e ->
           Logger.warning("DNS lookup failed safely: #{inspect(e)}")
-          # Continue anyway - the base_url should still work
       end
     end
 
     base_url = Application.fetch_env!(:where_corro, :corro_api_url)
 
-    # **LOGIC CHANGE**: Force Req to return raw body by disabling auto-JSON parsing
+    # **LOGIC CHANGE**: Use Req with explicit retry: false since we handle retries
     case Req.post("#{base_url}/#{path}",
            json: statement,
            connect_options: [transport_opts: [inet6: true]],
-           retry: :transient,
-           max_retries: 3,
-           # **NEW**: Prevent automatic JSON decoding
+           retry: false,  # We handle retries ourselves
+           receive_timeout: 10_000,  # **LOGIC CHANGE**: Longer timeout for cross-region
+           # **LOGIC CHANGE**: Keep decode_body: false for raw parsing
            decode_body: false
          ) do
       {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
@@ -51,14 +56,34 @@ defmodule WhereCorro.CorroCalls do
         Logger.error("Corrosion HTTP error #{status}: #{inspect(body)}")
         {:error, {:http_error, status, body}}
 
+      {:error, %Req.TransportError{reason: reason}} when retries > 1 ->
+        # **LOGIC CHANGE**: Retry on network errors
+        Logger.warning("Network error connecting to Corrosion (#{retries-1} retries left): #{inspect(reason)}")
+        Process.sleep(1000)
+        corro_request_with_retry(path, statement, retries - 1)
+
       {:error, %Req.TransportError{reason: reason}} ->
-        Logger.error("Network error connecting to Corrosion: #{inspect(reason)}")
+        Logger.error("Network error connecting to Corrosion (no retries left): #{inspect(reason)}")
         {:error, :network_error}
+
+      {:error, %{reason: :timeout}} when retries > 1 ->
+        # **LOGIC CHANGE**: Retry on timeouts (Req 0.5.x format)
+        Logger.warning("Timeout calling Corrosion (#{retries-1} retries left)")
+        Process.sleep(2000)  # Longer backoff for timeouts
+        corro_request_with_retry(path, statement, retries - 1)
+
+      {:error, %{reason: :timeout}} ->
+        Logger.error("Timeout calling Corrosion (no retries left)")
+        {:error, :timeout}
 
       {:error, reason} ->
         Logger.error("Unexpected error from Corrosion: #{inspect(reason)}")
         {:error, reason}
     end
+  end
+
+  def corro_request_with_retry(_path, _statement, 0) do
+    {:error, :max_retries_exceeded}
   end
 
   def execute_corro(transactions) do
@@ -69,9 +94,13 @@ defmodule WhereCorro.CorroCalls do
     corro_request("queries", statement)
   end
 
-  # Parse the response body from Corrosion API.
+  # **LOGIC CHANGE**: Add explicit no-retry version for cases where we don't want retries
+  def corro_request_no_retry(path, statement) do
+    corro_request_with_retry(path, statement, 1)
+  end
 
-  defp parse_corrosion_response(body, endpoint_type) do
+  # Parse the response body from Corrosion API.
+  defp parse_corrosion_response(body, _endpoint_type) do
     try do
       # Split by newlines and decode each JSON object, just like the old version
       bodylist =

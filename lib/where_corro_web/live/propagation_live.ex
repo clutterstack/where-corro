@@ -76,22 +76,22 @@ defmodule WhereCorroWeb.PropagationLive do
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <%= for {node_id, status} <- @node_statuses do %>
               <div class={[
-                "p-4 rounded-lg border-2",
-                node_status_class(status.status)
-              ]}>
-                <div class="font-mono font-bold">{node_id}</div>
-                <div class="text-sm text-gray-600">
-                  Region: {Map.get(@node_regions, node_id, "unknown")}
-                </div>
-                <div class="text-sm mt-1">
-                  Status: <span class="font-semibold">{format_status(status.status)}</span>
-                </div>
-                <%= if status.latency do %>
-                  <div class="text-sm text-gray-600">
-                    Latency: {status.latency}ms
-                  </div>
-                <% end %>
-              </div>
+  "p-4 rounded-lg border-2",
+  node_status_class(status.status)
+]}>
+  <div class="font-mono font-bold">{node_id}</div>
+  <div class="text-sm text-gray-600">
+    Region: {Map.get(@node_regions, node_id, "unknown")}
+  </div>
+  <div class="text-sm mt-1">
+    Status: <span class="font-semibold">{format_status(status.status)}</span>
+  </div>
+  <%= if timing_info = format_node_timing(status) do %>
+    <div class="text-sm text-gray-600">
+      {timing_info}
+    </div>
+  <% end %>
+</div>
             <% end %>
           </div>
 
@@ -264,23 +264,52 @@ defmodule WhereCorroWeb.PropagationLive do
     end
   end
 
-  def handle_info(
-        {:ack_status_changed, %{receiver_id: node_id, status: "failed", sequence: seq}},
-        socket
-      ) do
-    # Only update if this is for our current message
-    if socket.assigns.last_sent_message && socket.assigns.last_sent_message.sequence == seq do
-      updated_statuses =
-        put_in(
-          socket.assigns.node_statuses[node_id],
-          %{status: :failed, latency: nil}
-        )
+def handle_info(
+      {:ack_status_changed, %{receiver_id: node_id, status: status, sequence: seq, status_time: status_time}},
+      socket
+    ) do
+  # Only update if this is for our current message
+  if socket.assigns.last_sent_message && socket.assigns.last_sent_message.sequence == seq do
+    case status do
+      "success" ->
+        # Calculate latency for successful acks
+        sent_time = socket.assigns.last_sent_message.timestamp
+        {:ok, sent_dt, _} = DateTime.from_iso8601(sent_time)
+        {:ok, ack_dt, _} = DateTime.from_iso8601(DateTime.to_iso8601(status_time))
+        latency = DateTime.diff(ack_dt, sent_dt, :millisecond)
 
-      {:noreply, assign(socket, node_statuses: updated_statuses)}
-    else
-      {:noreply, socket}
+        updated_statuses =
+          put_in(
+            socket.assigns.node_statuses[node_id],
+            %{status: :acknowledged, latency: latency}
+          )
+
+        {:noreply, assign(socket, node_statuses: updated_statuses)}
+
+      "failed" ->
+        # **LOGIC CHANGE**: For failed acks, calculate "time to failure" instead of latency
+        sent_time = socket.assigns.last_sent_message.timestamp
+        {:ok, sent_dt, _} = DateTime.from_iso8601(sent_time)
+        {:ok, fail_dt, _} = DateTime.from_iso8601(DateTime.to_iso8601(status_time))
+        time_to_failure = DateTime.diff(fail_dt, sent_dt, :millisecond)
+
+        updated_statuses =
+          put_in(
+            socket.assigns.node_statuses[node_id],
+            %{status: :failed, latency: nil, time_to_failure: time_to_failure}
+          )
+
+        {:noreply, assign(socket, node_statuses: updated_statuses)}
+
+      _ ->
+        {:noreply, socket}
     end
+  else
+    {:noreply, socket}
   end
+end
+
+
 
   # Add this to the existing PropagationLive - just the key changes:
 
@@ -318,6 +347,23 @@ defmodule WhereCorroWeb.PropagationLive do
     {:noreply, assign(socket, corro_regions: regions)}
   end
 
+
+  # **LOGIC CHANGE**: Update the node status display function
+defp format_node_timing(status) do
+  case status do
+    %{status: :acknowledged, latency: latency} when is_number(latency) ->
+      "RTT: #{latency}ms"
+
+    %{status: :failed, time_to_failure: ttf} when is_number(ttf) ->
+      "Failed after #{ttf}ms"
+
+    %{status: :pending} ->
+      "Waiting..."
+
+    _ ->
+      nil  # **LOGIC CHANGE**: Return nil instead of empty string for cleaner template logic
+  end
+end
   # Discover existing nodes from Corrosion
   # **LOGIC CHANGE**: Also update when we discover nodes from Corrosion
   defp discover_existing_nodes do
@@ -416,8 +462,10 @@ defmodule WhereCorroWeb.PropagationLive do
   end
 
   defp get_instances_from_dns(app_name) do
-    # Try to resolve _instances.internal
-    dns_name = "#{app_name}.internal"
+
+    dns_name = "vms.#{app_name}.internal"
+
+    :inet_res.getbyname(String.to_charlist(dns_name), :txt) |> dbg
 
     case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do
       {:ok, {:hostent, _, _, :txt, _, [records]}} ->
@@ -427,7 +475,7 @@ defmodule WhereCorroWeb.PropagationLive do
           |> String.split(";")
           |> Enum.map(&parse_instance_record/1)
           |> Enum.reject(&is_nil/1)
-          |> Enum.into(%{})
+          |> Enum.into(%{}) |> inspect() |> Logger.info()
 
         {:ok, instances}
 

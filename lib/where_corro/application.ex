@@ -9,12 +9,8 @@ defmodule WhereCorro.Application do
       # WhereCorroWeb.Telemetry,
       # Start the PubSub system
       {Phoenix.PubSub, name: WhereCorro.PubSub},
-      # Start Finch
-      {Finch,
-       name: WhereCorro.Finch,
-       pools: %{
-         default: [conn_opts: [transport_opts: [inet6: true]]]
-       }},
+      # **LOGIC CHANGE**: Keep default Finch for Req with IPv6 support
+      {Finch, name: WhereCorro.Finch},
       # Start the Endpoint (http/https)
       {DynamicSupervisor, name: WhereCorro.WatchSupervisor, strategy: :one_for_one},
       {Task.Supervisor, name: WhereCorro.TaskSupervisor},
@@ -23,7 +19,7 @@ defmodule WhereCorro.Application do
       WhereCorro.Propagation.MessagePropagator,
       # WhereCorro.Discoverer,
       WhereCorro.FriendFinder,
-      # **NEW**: Start the metrics collector
+      # Start the metrics collector
       WhereCorro.Propagation.MetricsCollector
     ]
 
