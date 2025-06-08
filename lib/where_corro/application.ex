@@ -18,10 +18,10 @@ defmodule WhereCorro.Application do
       # Start the Endpoint (http/https)
       {DynamicSupervisor, name: WhereCorro.WatchSupervisor, strategy: :one_for_one},
       {Task.Supervisor, name: WhereCorro.TaskSupervisor},
-      WhereCorro.GenSandwich,
+      # WhereCorro.GenSandwich,
       WhereCorroWeb.Endpoint,
       WhereCorro.Propagation.MessagePropagator,
-      WhereCorro.Discoverer,
+      # WhereCorro.Discoverer,
       WhereCorro.FriendFinder,
       # **NEW**: Start the metrics collector
       WhereCorro.Propagation.MetricsCollector

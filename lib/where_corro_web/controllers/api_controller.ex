@@ -3,18 +3,6 @@ defmodule WhereCorroWeb.APIController do
   require Logger
   alias WhereCorro.Propagation.MetricsCollector
 
-  # Keep existing sandwich endpoint for now
-  def show(conn, _params) do
-    inspect(WhereCorro.GenSandwich.get_sandwich()) |> Logger.info()
-    sandwich = WhereCorro.GenSandwich.get_sandwich()
-
-    if is_binary(sandwich) do
-      json(conn, %{status: "good", sandwich: sandwich})
-    else
-      json(conn, %{status: "bad", sandwich: "none"})
-    end
-  end
-
   # Add new acknowledgment endpoint
   def acknowledge(conn, %{
         "sequence" => sequence,

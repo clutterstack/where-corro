@@ -13,16 +13,21 @@ defmodule WhereCorro.Propagation.MetricsCollector do
 
   def init(_) do
     # Initialize metrics storage
-    {:ok,
-     %{
-       # {sender_id, sequence} => %{sent_at, acks: %{}}
-       active_messages: %{},
-       # List of completed propagation metrics
-       completed_metrics: []
-     }}
+    {:ok, %{
+      active_messages: %{},  # {sender_id, sequence} => %{sent_at, acks: %{}, expected_nodes: []}
+      completed_metrics: [], # List of completed propagation metrics
+      known_nodes: []        # **LOGIC CHANGE**: Nodes from existing discovery system
+    }}
   end
 
   # Client API
+
+  @doc """
+  Update the list of known nodes from the discovery system
+  """
+  def update_known_nodes(node_list) do
+    GenServer.cast(__MODULE__, {:update_nodes, node_list})
+  end
 
   @doc """
   Start tracking a new message
@@ -35,10 +40,7 @@ defmodule WhereCorro.Propagation.MetricsCollector do
   Record an acknowledgment
   """
   def record_acknowledgment(sender_id, sequence, receiver_id) do
-    GenServer.cast(
-      __MODULE__,
-      {:record_ack, sender_id, sequence, receiver_id, DateTime.utc_now()}
-    )
+    GenServer.cast(__MODULE__, {:record_ack, sender_id, sequence, receiver_id, DateTime.utc_now()})
   end
 
   @doc """
@@ -57,13 +59,21 @@ defmodule WhereCorro.Propagation.MetricsCollector do
 
   # Server callbacks
 
+  def handle_cast({:update_nodes, node_list}, state) do
+    Logger.debug("Updated known nodes: #{inspect(node_list)}")
+    {:noreply, %{state | known_nodes: node_list}}
+  end
+
   def handle_cast({:start_tracking, sender_id, sequence, sent_at}, state) do
     key = {sender_id, sequence}
+
+    # **LOGIC CHANGE**: Use known_nodes from discovery system instead of DNS
+    expected_nodes = state.known_nodes |> Enum.reject(&(&1 == sender_id))
 
     message_data = %{
       sent_at: sent_at,
       acks: %{},
-      expected_nodes: get_expected_nodes(sender_id)
+      expected_nodes: expected_nodes
     }
 
     new_state = put_in(state.active_messages[key], message_data)
@@ -87,11 +97,10 @@ defmodule WhereCorro.Propagation.MetricsCollector do
         rtt = DateTime.diff(ack_time, message_data.sent_at, :millisecond)
 
         # Update acks
-        updated_acks =
-          Map.put(message_data.acks, receiver_id, %{
-            ack_time: ack_time,
-            rtt: rtt
-          })
+        updated_acks = Map.put(message_data.acks, receiver_id, %{
+          ack_time: ack_time,
+          rtt: rtt
+        })
 
         updated_message = Map.put(message_data, :acks, updated_acks)
         new_state = put_in(state.active_messages[key], updated_message)
@@ -111,15 +120,14 @@ defmodule WhereCorro.Propagation.MetricsCollector do
   def handle_call({:get_message_metrics, sender_id, sequence}, _from, state) do
     key = {sender_id, sequence}
 
-    metrics =
-      case Map.get(state.active_messages, key) do
-        nil ->
-          # Check completed metrics
-          find_completed_metrics(state.completed_metrics, sender_id, sequence)
+    metrics = case Map.get(state.active_messages, key) do
+      nil ->
+        # Check completed metrics
+        find_completed_metrics(state.completed_metrics, sender_id, sequence)
 
-        active ->
-          calculate_message_metrics(active)
-      end
+      active ->
+        calculate_message_metrics(active)
+    end
 
     {:reply, metrics, state}
   end
@@ -133,17 +141,19 @@ defmodule WhereCorro.Propagation.MetricsCollector do
         # Calculate final metrics
         metrics = calculate_final_metrics(key, message_data)
 
-        # Store in completed metrics
-        # Keep last 100
+        # Store in completed metrics (keep last 100)
         completed = [metrics | state.completed_metrics] |> Enum.take(100)
 
         # Remove from active
         new_active = Map.delete(state.active_messages, key)
 
-        new_state = %{state | active_messages: new_active, completed_metrics: completed}
+        new_state = %{state |
+          active_messages: new_active,
+          completed_metrics: completed
+        }
 
-        # Store in Corrosion for persistence
-        store_metrics_in_corrosion(metrics)
+        # **LOGIC CHANGE**: Simplified storage - just log for now, remove Corrosion storage
+        Logger.info("Message #{elem(key, 0)}:#{elem(key, 1)} metrics: #{format_metrics_summary(metrics)}")
 
         {:noreply, new_state}
     end
@@ -151,54 +161,14 @@ defmodule WhereCorro.Propagation.MetricsCollector do
 
   # Private helpers
 
-  defp get_expected_nodes(sender_id) do
-    # Get all nodes in the cluster except sender
-    # This is a simplified version - you'd want to query actual cluster members
-    case discover_cluster_nodes() do
-      {:ok, nodes} -> Enum.reject(nodes, &(&1 == sender_id))
-      {:error, _} -> []
-    end
-  end
-
-  defp discover_cluster_nodes do
-    # Query DNS for all instances
-    app_name = Application.get_env(:where_corro, :fly_app_name, "where-corro")
-    dns_name = "_instances.internal"
-
-    case :inet_res.getbyname(String.to_charlist(dns_name), :txt) do
-      {:ok, {:hostent, _, _, :txt, _, [records]}} ->
-        nodes =
-          records
-          |> List.to_string()
-          |> String.split(";")
-          |> Enum.map(&extract_instance_id/1)
-          |> Enum.reject(&is_nil/1)
-
-        {:ok, nodes}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  rescue
-    _ -> {:error, :dns_error}
-  end
-
-  defp extract_instance_id(record) do
-    case Regex.run(~r/instance=([^,]+)/, record) do
-      [_, instance_id] -> instance_id
-      _ -> nil
-    end
-  end
-
   defp calculate_message_metrics(message_data) do
     acked_nodes = Map.keys(message_data.acks)
     expected_count = length(message_data.expected_nodes)
     ack_count = length(acked_nodes)
 
-    rtts =
-      message_data.acks
-      |> Map.values()
-      |> Enum.map(& &1.rtt)
+    rtts = message_data.acks
+    |> Map.values()
+    |> Enum.map(& &1.rtt)
 
     %{
       sent_at: message_data.sent_at,
@@ -219,8 +189,7 @@ defmodule WhereCorro.Propagation.MetricsCollector do
       sender_id: sender_id,
       sequence: sequence,
       finalized_at: DateTime.utc_now(),
-      # For future topology comparisons
-      topology_id: get_current_topology_id()
+      topology_id: "default"  # For future topology comparisons
     })
   end
 
@@ -241,33 +210,28 @@ defmodule WhereCorro.Propagation.MetricsCollector do
       total = length(completed_metrics)
       avg_success = Enum.sum(Enum.map(completed_metrics, & &1.success_rate)) / total
 
-      all_rtts =
-        completed_metrics
-        |> Enum.flat_map(fn m -> Map.values(m.acks) |> Enum.map(& &1.rtt) end)
+      all_rtts = completed_metrics
+      |> Enum.flat_map(fn m -> Map.values(m.acks || %{}) |> Enum.map(& &1.rtt) end)
 
       # Per-node stats
-      by_node =
-        completed_metrics
-        |> Enum.reduce(%{}, fn metrics, acc ->
-          Enum.reduce(metrics.acks, acc, fn {node_id, ack_data}, node_acc ->
-            update_in(node_acc[node_id], fn
-              nil ->
-                %{count: 1, total_rtt: ack_data.rtt, min_rtt: ack_data.rtt, max_rtt: ack_data.rtt}
-
-              existing ->
-                %{
-                  count: existing.count + 1,
-                  total_rtt: existing.total_rtt + ack_data.rtt,
-                  min_rtt: min(existing.min_rtt, ack_data.rtt),
-                  max_rtt: max(existing.max_rtt, ack_data.rtt)
-                }
-            end)
+      by_node = completed_metrics
+      |> Enum.reduce(%{}, fn metrics, acc ->
+        Enum.reduce(metrics.acks || %{}, acc, fn {node_id, ack_data}, node_acc ->
+          update_in(node_acc[node_id], fn
+            nil -> %{count: 1, total_rtt: ack_data.rtt, min_rtt: ack_data.rtt, max_rtt: ack_data.rtt}
+            existing -> %{
+              count: existing.count + 1,
+              total_rtt: existing.total_rtt + ack_data.rtt,
+              min_rtt: min(existing.min_rtt, ack_data.rtt),
+              max_rtt: max(existing.max_rtt, ack_data.rtt)
+            }
           end)
         end)
-        |> Enum.map(fn {node_id, stats} ->
-          {node_id, Map.put(stats, :avg_rtt, stats.total_rtt / stats.count)}
-        end)
-        |> Enum.into(%{})
+      end)
+      |> Enum.map(fn {node_id, stats} ->
+        {node_id, Map.put(stats, :avg_rtt, stats.total_rtt / stats.count)}
+      end)
+      |> Enum.into(%{})
 
       %{
         total_messages: total,
@@ -287,55 +251,23 @@ defmodule WhereCorro.Propagation.MetricsCollector do
   end
 
   defp broadcast_metrics_update(sender_id, sequence, receiver_id, rtt) do
-    Phoenix.PubSub.broadcast(
-      WhereCorro.PubSub,
-      "metrics:updates",
-      {:metrics_update,
-       %{
-         sender_id: sender_id,
-         sequence: sequence,
-         receiver_id: receiver_id,
-         rtt: rtt
-       }}
+    Phoenix.PubSub.broadcast(WhereCorro.PubSub, "metrics:updates",
+      {:metrics_update, %{
+        sender_id: sender_id,
+        sequence: sequence,
+        receiver_id: receiver_id,
+        rtt: rtt
+      }}
     )
   end
 
-  defp store_metrics_in_corrosion(metrics) do
-    # Store aggregated metrics in Corrosion for later analysis
-    # This is a simplified version - you might want a more sophisticated schema
-
-    metrics_json =
-      Jason.encode!(%{
-        success_rate: metrics.success_rate,
-        avg_rtt: metrics.avg_rtt,
-        min_rtt: metrics.min_rtt,
-        max_rtt: metrics.max_rtt,
-        node_count: metrics.acknowledged_nodes
-      })
-
-    transactions = [
-      """
-      INSERT INTO propagation_metrics
-        (id, sender_id, sequence, sent_at, topology_id, metrics)
-      VALUES
-        ('#{metrics.sender_id}:#{metrics.sequence}', '#{metrics.sender_id}',
-         #{metrics.sequence}, '#{DateTime.to_iso8601(metrics.sent_at)}',
-         '#{metrics.topology_id}', '#{metrics_json}')
-      """
-    ]
-
-    case WhereCorro.CorroCalls.execute_corro(transactions) do
-      {:ok, _} ->
-        :ok
-
-      {:error, reason} ->
-        Logger.error("Failed to store metrics: #{inspect(reason)}")
-    end
+  # **LOGIC CHANGE**: Simple logging instead of Corrosion storage for now
+  defp format_metrics_summary(metrics) do
+    "Success: #{Float.round(metrics.success_rate, 1)}%, " <>
+    "Nodes: #{metrics.acknowledged_nodes}/#{metrics.expected_nodes}, " <>
+    "RTT: #{format_rtt(metrics.avg_rtt)}"
   end
 
-  defp get_current_topology_id do
-    # For now, return a default
-    # Later this could identify different topology configurations
-    "default"
-  end
+  defp format_rtt(nil), do: "N/A"
+  defp format_rtt(rtt), do: "#{Float.round(rtt, 1)}ms"
 end

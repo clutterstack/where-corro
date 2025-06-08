@@ -33,7 +33,51 @@ defmodule WhereCorro.CorroWatch do
     end
   end
 
-  defp start_streaming_watch(watch_name, statement) do
+
+  # Handle streaming data chunks
+  def handle_info({:stream_data, data}, state) do
+    if state.watch_id do
+      process_streaming_data(state.name, data, state.watch_id)
+    end
+
+    {:noreply, state}
+  end
+
+  # Handle stream headers (to extract watch_id)
+  def handle_info({:stream_headers, headers}, state) do
+    case List.keyfind(headers, "corro-query-id", 0) do
+      {"corro-query-id", watch_id} ->
+        Logger.debug("Got watch ID from headers: #{watch_id}")
+        {:noreply, %{state | watch_id: watch_id}}
+
+      nil ->
+        {:noreply, state}
+    end
+  end
+
+  # Handle stream status
+  def handle_info({:stream_status, status}, state) do
+    Logger.debug("Stream status: #{status}")
+    {:noreply, state}
+  end
+
+  # Handle stream completion - this might not be called with Req streaming
+  def handle_info({:req_response, :done}, state) do
+    Logger.info("Watch stream completed for '#{state.name}'")
+    # Restart the watch after a delay
+    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 1_000)
+    {:noreply, %{state | watch_id: nil}}
+  end
+
+  # Handle stream errors
+  def handle_info({:stream_error, error}, state) do
+    Logger.error("Stream error for watch '#{state.name}': #{inspect(error)}")
+    # Restart the watch after a delay
+    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 5_000)
+    {:noreply, %{state | watch_id: nil}}
+  end
+
+    defp start_streaming_watch(watch_name, statement) do
     base_url = Application.fetch_env!(:where_corro, :corro_api_url)
     url = "#{base_url}/subscriptions"
 
@@ -86,48 +130,6 @@ defmodule WhereCorro.CorroWatch do
     end
   end
 
-  # Handle streaming data chunks
-  def handle_info({:stream_data, data}, state) do
-    if state.watch_id do
-      process_streaming_data(state.name, data, state.watch_id)
-    end
-
-    {:noreply, state}
-  end
-
-  # Handle stream headers (to extract watch_id)
-  def handle_info({:stream_headers, headers}, state) do
-    case List.keyfind(headers, "corro-query-id", 0) do
-      {"corro-query-id", watch_id} ->
-        Logger.debug("Got watch ID from headers: #{watch_id}")
-        {:noreply, %{state | watch_id: watch_id}}
-
-      nil ->
-        {:noreply, state}
-    end
-  end
-
-  # Handle stream status
-  def handle_info({:stream_status, status}, state) do
-    Logger.debug("Stream status: #{status}")
-    {:noreply, state}
-  end
-
-  # Handle stream completion - this might not be called with Req streaming
-  def handle_info({:req_response, :done}, state) do
-    Logger.info("Watch stream completed for '#{state.name}'")
-    # Restart the watch after a delay
-    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 1_000)
-    {:noreply, %{state | watch_id: nil}}
-  end
-
-  # Handle stream errors
-  def handle_info({:stream_error, error}, state) do
-    Logger.error("Stream error for watch '#{state.name}': #{inspect(error)}")
-    # Restart the watch after a delay
-    Process.send_after(self(), {:start_watcher, state.name, state.statement}, 5_000)
-    {:noreply, %{state | watch_id: nil}}
-  end
 
   defp process_streaming_data(watch_name, data, watch_id) do
     # Split by newlines and process each JSON object

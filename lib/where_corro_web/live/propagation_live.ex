@@ -282,47 +282,48 @@ defmodule WhereCorroWeb.PropagationLive do
     end
   end
 
+  # Add this to the existing PropagationLive - just the key changes:
+
   def handle_info({:other_regions, regions}, socket) do
     # **LOGIC CHANGE**: Merge with discovered nodes from Corrosion
     additional_nodes = discover_nodes_in_regions(regions)
     all_discovered = Map.merge(socket.assigns.discovered_nodes, additional_nodes)
 
-    {node_statuses, node_regions} =
-      Enum.reduce(
-        all_discovered,
-        {socket.assigns.node_statuses, socket.assigns.node_regions},
-        fn {node_id, region}, {statuses, regions} ->
-          # Skip our own node
-          if node_id != socket.assigns.node_id do
-            statuses = Map.put_new(statuses, node_id, %{status: :unknown, latency: nil})
-            regions = Map.put(regions, node_id, region)
-            {statuses, regions}
-          else
-            {statuses, regions}
-          end
+    {node_statuses, node_regions} = Enum.reduce(all_discovered, {socket.assigns.node_statuses, socket.assigns.node_regions},
+      fn {node_id, region}, {statuses, regions} ->
+        # Skip our own node
+        if node_id != socket.assigns.node_id do
+          statuses = Map.put_new(statuses, node_id, %{status: :unknown, latency: nil})
+          regions = Map.put(regions, node_id, region)
+          {statuses, regions}
+        else
+          {statuses, regions}
         end
-      )
+      end
+    )
 
-    {:noreply,
-     assign(socket,
-       other_regions: regions,
-       node_statuses: node_statuses,
-       node_regions: node_regions,
-       discovered_nodes: all_discovered
-     )}
+    # **LOGIC CHANGE**: Update metrics collector with known nodes
+    known_node_ids = Map.keys(node_statuses)
+    WhereCorro.Propagation.MetricsCollector.update_known_nodes(known_node_ids)
+
+    {:noreply, assign(socket,
+      other_regions: regions,
+      node_statuses: node_statuses,
+      node_regions: node_regions,
+      discovered_nodes: all_discovered
+    )}
   end
 
   def handle_info({:corro_regions, regions}, socket) do
     {:noreply, assign(socket, corro_regions: regions)}
   end
 
-  # **NEW**: Discover existing nodes from Corrosion
+  # Discover existing nodes from Corrosion
+  # **LOGIC CHANGE**: Also update when we discover nodes from Corrosion
   defp discover_existing_nodes do
-    case WhereCorro.CorroCalls.query_corro(
-           "SELECT DISTINCT node_id FROM node_messages WHERE node_id != ''"
-         ) do
+    case WhereCorro.CorroCalls.query_corro("SELECT DISTINCT node_id FROM node_messages WHERE node_id != ''") do
       {:ok, %{rows: rows}} ->
-        rows
+        discovered = rows
         |> List.flatten()
         |> Enum.map(fn node_id ->
           # Try to get region from app name pattern or use unknown
@@ -330,6 +331,14 @@ defmodule WhereCorroWeb.PropagationLive do
           {node_id, region}
         end)
         |> Enum.into(%{})
+
+        # **LOGIC CHANGE**: Update metrics collector immediately with discovered nodes
+        discovered
+        |> Map.keys()
+        |> Enum.reject(&(&1 == Application.fetch_env!(:where_corro, :fly_vm_id)))
+        |> WhereCorro.Propagation.MetricsCollector.update_known_nodes()
+
+        discovered
 
       {:error, reason} ->
         Logger.warning("Failed to query existing nodes: #{inspect(reason)}")

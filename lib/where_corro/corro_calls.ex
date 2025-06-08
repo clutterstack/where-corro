@@ -69,12 +69,8 @@ defmodule WhereCorro.CorroCalls do
     corro_request("queries", statement)
   end
 
-  @doc """
-  Parse the response body from Corrosion API.
+  # Parse the response body from Corrosion API.
 
-  **LOGIC CHANGE**: Simplified to match the pattern from the previous working version.
-  Corrosion returns NDJSON (newline-delimited JSON) as a string that we split and decode.
-  """
   defp parse_corrosion_response(body, endpoint_type) do
     try do
       # Split by newlines and decode each JSON object, just like the old version
