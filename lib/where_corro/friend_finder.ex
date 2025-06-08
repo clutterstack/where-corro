@@ -59,7 +59,7 @@ defmodule WhereCorro.FriendFinder do
             |> List.to_string()
             |> String.split(",")
             |> IO.inspect(label: "app regions")
-            |> Enum.reject(& match?(^home_region, &1))
+            |> Enum.reject(& match?(^home_region, &1)) |> dbg
             #|> IO.inspect(label: "other regions")
             {:ok, other_regions}
           {:error, :nxdomain} -> {:error, :nxdomain}

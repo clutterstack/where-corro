@@ -1,47 +1,52 @@
 defmodule WhereCorro.Propagation.MessagePropagator do
   use GenServer
   require Logger
-  alias WhereCorro.Propagation.Acknowledgment
+  alias WhereCorro.Propagation.{Acknowledgment, MetricsCollector}
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
   def init(_opts) do
-    # **LOGIC CHANGE**: More robust local development handling
-    corro_builtin = Application.fetch_env!(:where_corro, :corro_builtin)
-    node_id = Application.fetch_env!(:where_corro, :fly_vm_id)
+    # **LOGIC CHANGE**: Check for local cluster mode first
+    local_cluster_mode = Application.get_env(:where_corro, :local_cluster_mode, false)
+    corro_builtin = Application.get_env(:where_corro, :corro_builtin, "0")
+    node_id = Application.get_env(:where_corro, :fly_vm_id, "localhost")
 
-    # **LOGIC CHANGE**: Skip all DNS checks and Corrosion connectivity in local mode
-    if corro_builtin == "1" and node_id == "localhost" do
-      Logger.info("Running in local development mode - skipping DNS and Corrosion checks")
-    else
-      # Production mode - check Corrosion availability with better error handling
-      case safe_corro_checks() do
-        {:ok, []} ->
-          Logger.info("Corrosion connectivity checks passed")
+    cond do
+      # **LOGIC CHANGE**: Local cluster mode - skip all external checks
+      local_cluster_mode ->
+        Logger.info("🏠 MessagePropagator starting in local cluster mode")
 
-        {:error, reason} ->
-          Logger.warning("Corrosion connectivity checks failed: #{inspect(reason)}")
-          # Continue anyway for now - you might want to exit here in production
-      end
+      # **LOGIC CHANGE**: Local development with builtin Corrosion
+      corro_builtin == "1" and node_id == "localhost" ->
+        Logger.info("💻 MessagePropagator starting in local development mode")
+
+      # **LOGIC CHANGE**: Production mode - do connectivity checks
+      true ->
+        case safe_corro_checks() do
+          {:ok, []} ->
+            Logger.info("☁️  Corrosion connectivity checks passed")
+
+          {:error, reason} ->
+            Logger.warning("⚠️  Corrosion connectivity checks failed: #{inspect(reason)}")
+        end
     end
 
     # Initialize this node's entry
     init_node_message(node_id)
 
-    # **LOGIC CHANGE**: Only start watching if not in local single-node mode
-    if should_start_watching?(corro_builtin, node_id) do
+    # **LOGIC CHANGE**: Start watching based on mode
+    if should_start_watching?(local_cluster_mode, corro_builtin, node_id) do
       start_corrosion_watch()
     else
-      Logger.info("Skipping Corrosion watch in local single-node mode")
+      Logger.info("⏭️  Skipping Corrosion watch (local single-node mode)")
     end
 
     {:ok,
      %{
        node_id: node_id,
        last_seen_sequences: %{},
-       # **LOGIC CHANGE**: Add deduplication state
        processed_messages: %{}
      }}
   end
@@ -70,10 +75,10 @@ defmodule WhereCorro.Propagation.MessagePropagator do
 
     case WhereCorro.CorroCalls.execute_corro(transactions) do
       {:ok, _} ->
-        Logger.info("Sent message #{sequence} with timestamp #{timestamp}")
+        Logger.info("📤 Sent message #{sequence} with timestamp #{timestamp}")
 
         # Initialize metrics for this message
-        # MetricsCollector.start_tracking(state.node_id, sequence)
+        MetricsCollector.start_tracking(state.node_id, sequence)
 
         # Broadcast to LiveView
         Phoenix.PubSub.broadcast(
@@ -85,7 +90,7 @@ defmodule WhereCorro.Propagation.MessagePropagator do
         {:reply, :ok, state}
 
       {:error, reason} ->
-        Logger.error("Failed to send message: #{inspect(reason)}")
+        Logger.error("❌ Failed to send message: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
     end
   end
@@ -94,16 +99,14 @@ defmodule WhereCorro.Propagation.MessagePropagator do
   def handle_info({"message_watch", [node_id, message, sequence, timestamp]}, state) do
     # Skip our own messages
     if node_id != state.node_id do
-      # **LOGIC CHANGE**: Use compound key for deduplication
       message_key = {node_id, sequence}
 
       if !Map.has_key?(state.processed_messages, message_key) do
-        Logger.info("Received message #{sequence} from #{node_id}")
+        Logger.info("📥 Received message #{sequence} from #{node_id}")
 
         # Send acknowledgment
         Acknowledgment.send_ack(node_id, sequence, state.node_id)
 
-        # **LOGIC CHANGE**: Update state with processed message tracking
         new_state =
           state
           |> put_in([:last_seen_sequences, node_id], sequence)
@@ -131,7 +134,19 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     end
   end
 
-  # **LOGIC CHANGE**: New helper functions for safer initialization
+  # **LOGIC CHANGE**: Enhanced checking logic for different modes
+  defp should_start_watching?(local_cluster_mode, corro_builtin, node_id) do
+    cond do
+      # **LOGIC CHANGE**: Always watch in local cluster mode (separate Corrosion instances)
+      local_cluster_mode -> true
+
+      # **LOGIC CHANGE**: Don't watch in local single-node development
+      corro_builtin == "1" and node_id == "localhost" -> false
+
+      # **LOGIC CHANGE**: Watch in all other cases (production)
+      true -> true
+    end
+  end
 
   defp safe_corro_checks do
     try do
@@ -147,11 +162,6 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     end
   end
 
-  defp should_start_watching?(corro_builtin, node_id) do
-    # **LOGIC CHANGE**: Don't start watching in local single-node development
-    not (corro_builtin == "1" and node_id == "localhost")
-  end
-
   defp start_corrosion_watch do
     try do
       WhereCorro.CorroCalls.start_watch({
@@ -159,14 +169,13 @@ defmodule WhereCorro.Propagation.MessagePropagator do
         "SELECT node_id, message, sequence, timestamp FROM node_messages"
       })
 
-      Logger.info("Started Corrosion message watch")
+      Logger.info("👀 Started Corrosion message watch")
     rescue
       exception ->
-        Logger.error("Failed to start Corrosion watch: #{inspect(exception)}")
-        # **LOGIC CHANGE**: Don't crash the GenServer, just log and continue
+        Logger.error("❌ Failed to start Corrosion watch: #{inspect(exception)}")
     catch
       :exit, reason ->
-        Logger.error("Exit while starting Corrosion watch: #{inspect(reason)}")
+        Logger.error("💥 Exit while starting Corrosion watch: #{inspect(reason)}")
     end
   end
 
@@ -179,8 +188,8 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     ]
 
     case WhereCorro.CorroCalls.execute_corro(transactions) do
-      {:ok, _} -> Logger.info("Initialized node message entry")
-      {:error, reason} -> Logger.error("Failed to initialize: #{inspect(reason)}")
+      {:ok, _} -> Logger.info("✅ Initialized node message entry")
+      {:error, reason} -> Logger.error("❌ Failed to initialize: #{inspect(reason)}")
     end
   end
 
@@ -189,7 +198,8 @@ defmodule WhereCorro.Propagation.MessagePropagator do
     case WhereCorro.CorroCalls.query_corro(
            "SELECT sequence FROM node_messages WHERE pk = '#{node_id}'"
          ) do
-      {:ok, %{"results" => [%{"sequence" => current}]}} -> current + 1
+      {:ok, %{rows: [[current]]}} -> current + 1
+      {:ok, %{rows: []}} -> 1
       _ -> 1
     end
   end

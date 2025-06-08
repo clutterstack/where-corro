@@ -1,0 +1,14 @@
+[db]
+path = "./corrosion.db"
+schema_paths = ["../../corrosion/schemas"]
+
+[gossip]
+addr = "127.0.0.1:8787"
+bootstrap = []
+plaintext = true
+
+[api]
+addr = "127.0.0.1:8081"
+
+[admin]
+path = "./admin.sock"

@@ -1,5 +1,6 @@
 defmodule WhereCorro.Propagation.Acknowledgment do
   require Logger
+  alias WhereCorro.Propagation.LocalNodeDiscovery
 
   @initial_backoff 100
   @max_backoff 30_000
@@ -8,7 +9,7 @@ defmodule WhereCorro.Propagation.Acknowledgment do
   def send_ack(sender_node_id, sequence, receiver_node_id) do
     # Record that we need to send this ack
     ack_id = "#{sender_node_id}:#{sequence}:#{receiver_node_id}"
-      Logger.info("🚀 Starting ack process: #{ack_id}")
+    Logger.info("🚀 Starting ack process: #{ack_id}")
 
     transactions = [
       """
@@ -27,7 +28,8 @@ defmodule WhereCorro.Propagation.Acknowledgment do
       WhereCorro.TaskSupervisor,
       fn ->
         Logger.info("📡 Async ack task started for #{ack_id}")
-        send_with_retry(sender_node_id, sequence, receiver_node_id, 1) end
+        send_with_retry(sender_node_id, sequence, receiver_node_id, 1)
+      end
     )
   end
 
@@ -53,9 +55,8 @@ defmodule WhereCorro.Propagation.Acknowledgment do
   end
 
   defp call_ack_api(sender_node_id, sequence, receiver_node_id) do
-    # For local development or cross-app communication
-    base_url = "http://#{sender_node_id}.vm.#{app_name()}.internal:8080"
-
+    # **LOGIC CHANGE**: Use LocalNodeDiscovery to get the correct endpoint
+    base_url = LocalNodeDiscovery.get_node_endpoint(sender_node_id)
     url = "#{base_url}/api/acknowledgment"
 
     Logger.info("🌐 Sending ack HTTP request to: #{url}")
@@ -68,28 +69,26 @@ defmodule WhereCorro.Propagation.Acknowledgment do
       })
 
     case Finch.build(:post, url, [{"content-type", "application/json"}], body)
-       |> Finch.request(WhereCorro.Finch) do
-        {:ok, %{status: status}} when status in 200..299 ->
-          Logger.info("✅ HTTP ack successful to #{sender_node_id} (status: #{status})")
-          :ok
+         |> Finch.request(WhereCorro.Finch) do
+      {:ok, %{status: status}} when status in 200..299 ->
+        Logger.info("✅ HTTP ack successful to #{sender_node_id} (status: #{status})")
+        :ok
 
-        {:ok, %{status: status, body: response_body}} ->
-          Logger.warning("❌ HTTP ack failed to #{sender_node_id} (status: #{status}, body: #{inspect(response_body)})")
-          :error
+      {:ok, %{status: status, body: response_body}} ->
+        Logger.warning("❌ HTTP ack failed to #{sender_node_id} (status: #{status}, body: #{inspect(response_body)})")
+        :error
 
-        {:error, %Mint.TransportError{reason: reason}} ->
-          Logger.warning("🔌 Network error sending ack to #{sender_node_id}: #{inspect(reason)}")
-          :error
+      {:error, %Mint.TransportError{reason: reason}} ->
+        Logger.warning("🔌 Network error sending ack to #{sender_node_id}: #{inspect(reason)}")
+        :error
 
-        {:error, reason} ->
-          Logger.warning("💥 Unexpected error sending ack to #{sender_node_id}: #{inspect(reason)}")
-          :error
-      end
+      {:error, reason} ->
+        Logger.warning("💥 Unexpected error sending ack to #{sender_node_id}: #{inspect(reason)}")
+        :error
+    end
   end
 
-  defp app_name do
-    Application.get_env(:where_corro, :fly_app_name, "where-corro")
-  end
+  # **LOGIC CHANGE**: Remove app_name function since endpoint is now handled by LocalNodeDiscovery
 
   defp mark_success(sender_id, sequence, receiver_id) do
     update_ack_status(sender_id, sequence, receiver_id, "success", DateTime.utc_now())
@@ -124,7 +123,7 @@ defmodule WhereCorro.Propagation.Acknowledgment do
 
     WhereCorro.CorroCalls.execute_corro(transactions)
 
-    # Notify LiveView of status change
+    # **LOGIC CHANGE**: Enhanced PubSub message with status_time for better tracking
     Phoenix.PubSub.broadcast(
       WhereCorro.PubSub,
       "acknowledgments",
@@ -133,7 +132,8 @@ defmodule WhereCorro.Propagation.Acknowledgment do
          sender_id: sender_id,
          sequence: sequence,
          receiver_id: receiver_id,
-         status: status
+         status: status,
+         status_time: ack_time || DateTime.utc_now()
        }}
     )
   end

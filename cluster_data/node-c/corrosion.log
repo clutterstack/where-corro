@@ -1,0 +1,51 @@
+2025-06-08T17:52:36.168365Z  INFO corrosion::command::agent: Starting Corrosion Agent v0.2.0-beta.0
+2025-06-08T17:52:36.335728Z  INFO corro_agent::agent::setup: Actor ID: f3e3d04a2cee4b6bbd0d3dfb02da4163
+2025-06-08T17:52:36.341309Z  INFO corro_types::pubsub: Initializing subscription at ./subscriptions/ed5a2249c4af4590bf1e9d0056530e02 sql_hash=143ad8b1bd4cc5fb sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.341663Z  INFO corro_types::pubsub: modified query for table 'node_messages': SELECT node_messages.pk AS __corro_pk_node_messages_pk, node_id AS col_0, message AS col_1, sequence AS col_2, timestamp AS col_3 FROM node_messages WHERE (node_messages.pk) IN __corro_sub.temp_node_messages sql_hash=143ad8b1bd4cc5fb sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.341694Z  INFO corro_agent::agent::setup: Restored subscription sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.341710Z  INFO corro_types::pubsub: Restoring subscription sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.341785Z  INFO corro_types::pubsub: Attaching __corro_sub to state db sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.341942Z  INFO corro_types::pubsub: Attached __corro_sub to state db sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.342105Z  INFO corro_types::pubsub: query plan for table 'node_messages':
+SEARCH node_messages USING INDEX sqlite_autoindex_node_messages_1 (pk=?)
+LIST SUBQUERY 1
+SCAN __corro_sub.temp_node_messages
+ sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02 sql_hash=143ad8b1bd4cc5fb
+2025-06-08T17:52:36.342796Z  INFO corro_agent::agent::setup: Cluster ID: 0
+2025-06-08T17:52:36.343275Z  INFO corro_agent::transport: Transport (0) for outgoing connections bound to socket [::]:59376
+2025-06-08T17:52:36.343301Z  INFO corro_agent::transport: Transport (1) for outgoing connections bound to socket [::]:57007
+2025-06-08T17:52:36.343323Z  INFO corro_agent::transport: Transport (2) for outgoing connections bound to socket [::]:56612
+2025-06-08T17:52:36.343345Z  INFO corro_agent::transport: Transport (3) for outgoing connections bound to socket [::]:62846
+2025-06-08T17:52:36.343365Z  INFO corro_agent::transport: Transport (4) for outgoing connections bound to socket [::]:49703
+2025-06-08T17:52:36.343384Z  INFO corro_agent::transport: Transport (5) for outgoing connections bound to socket [::]:60435
+2025-06-08T17:52:36.343404Z  INFO corro_agent::transport: Transport (6) for outgoing connections bound to socket [::]:59896
+2025-06-08T17:52:36.343425Z  INFO corro_agent::transport: Transport (7) for outgoing connections bound to socket [::]:57350
+2025-06-08T17:52:36.343487Z  INFO corro_types::pubsub: Starting loop to run the subscription sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.343496Z  INFO corro_types::pubsub: Notified condvar that the subscription is 'running' sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.344253Z  INFO corro_agent::agent::util: Starting API listener on tcp/127.0.0.1:8083
+2025-06-08T17:52:36.344235Z  INFO corro_types::pubsub: Deleted 0 old changes row in 30.084µs sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:36.344278Z  INFO corro_agent::broadcast: Scheduling cluster membership state update for 2 members (delete: 0)    
+2025-06-08T17:52:36.344508Z  INFO corro_agent::broadcast: Membership states changed! upserted: 2, deleted 0    
+2025-06-08T17:52:36.344547Z  INFO corro_agent::agent::run_root: Bookkeeping fully loaded in 257.25µs
+2025-06-08T17:52:36.344561Z  INFO corro_agent::agent::run_root: Starting peer API on udp/127.0.0.1:8789 (QUIC)
+2025-06-08T17:52:36.344582Z  INFO corro_agent::agent::handlers: gossipserver_handler is done
+2025-06-08T17:52:36.344578Z  INFO corro_agent::agent::util: Starting apply_fully_buffered_changes loop
+2025-06-08T17:52:36.344758Z  INFO corro_admin: Starting Corrosion admin socket at ./admin.sock
+2025-06-08T17:52:36.345964Z  INFO corro_agent::api::public: getting write connection to update schema
+2025-06-08T17:52:36.345993Z  INFO corro_agent::api::public: got write connection to update schema
+2025-06-08T17:52:36.346047Z  INFO corro_types::schema: new columns: {}
+2025-06-08T17:52:36.346054Z  INFO corro_types::schema: new columns: {}
+2025-06-08T17:52:36.346057Z  INFO corro_types::schema: new columns: {}
+2025-06-08T17:52:36.346095Z  INFO corro_agent::api::public: Updated 1 rows in __corro_schema for table acknowledgments
+2025-06-08T17:52:36.346113Z  INFO corro_agent::api::public: Updated 1 rows in __corro_schema for table propagation_metrics
+2025-06-08T17:52:36.346128Z  INFO corro_agent::api::public: Updated 1 rows in __corro_schema for table node_messages
+2025-06-08T17:52:36.346236Z  INFO corrosion::command::agent: Applied schema in 0.000261542s
+2025-06-08T17:52:36.403355Z  INFO corro_agent::agent::handlers: Member Up Actor { id: ActorId(8d4e40d5-6efe-48c9-970f-0975845a668a), addr: 127.0.0.1:8787, ts: Timestamp(6845cddc6558b820), cluster_id: ClusterId(0) } (result: NewMember)
+2025-06-08T17:52:36.403387Z  INFO corro_agent::agent::handlers: Current node is considered ACTIVE
+2025-06-08T17:52:36.403392Z  INFO corro_agent::agent::handlers: Member Up Actor { id: ActorId(0bb6db85-f0c1-4ae7-b8eb-efb856102dac), addr: 127.0.0.1:8788, ts: Timestamp(6845cde050ef77f0), cluster_id: ClusterId(0) } (result: NewMember)
+2025-06-08T17:52:38.266808Z  INFO corro_agent::api::public::pubsub: Received subscription request for query: SELECT node_id, message, sequence, timestamp FROM node_messages
+2025-06-08T17:52:38.267442Z  INFO corro_agent::api::public::pubsub: minimum expected change id: ChangeId(1) sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:38.267453Z  INFO corro_agent::api::public::pubsub: last change id sent by subscription: ChangeId(0) sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:38.267459Z  INFO corro_agent::api::public::pubsub: subscription is caught up, no gaps in change id. last change id: ChangeId(0), last_sub_change_id: None sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:38.267466Z  INFO corro_agent::api::public::pubsub: forwarding subscription events to a sender sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02
+2025-06-08T17:52:38.278013Z  WARN corro_agent::api::public::pubsub: could not forward subscription query event to receiver: channel closed sub_id=ed5a2249-c4af-4590-bf1e-9d0056530e02

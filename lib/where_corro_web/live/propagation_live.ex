@@ -1,7 +1,7 @@
 defmodule WhereCorroWeb.PropagationLive do
   use Phoenix.LiveView
   require Logger
-  alias WhereCorro.Propagation.MessagePropagator
+  alias WhereCorro.Propagation.{MessagePropagator, LocalNodeDiscovery}
   alias WhereCorroWeb.Components.PropagationMap
 
   def render(assigns) do
@@ -159,37 +159,56 @@ defmodule WhereCorroWeb.PropagationLive do
       Phoenix.PubSub.subscribe(WhereCorro.PubSub, "friend_regions")
       Phoenix.PubSub.subscribe(WhereCorro.PubSub, "corro_regions")
     end
+   # **LOGIC CHANGE**: Use LocalNodeDiscovery for initial node discovery
+    case LocalNodeDiscovery.discover_local_nodes() do
+      {:ok, discovered_nodes} ->
+        Logger.info("Discovered #{map_size(discovered_nodes)} nodes: #{inspect(Map.keys(discovered_nodes))}")
 
-    # Initialize with self in node_regions
-    node_regions = %{node_id => Application.fetch_env!(:where_corro, :fly_region)}
+        initial_node_statuses =
+          discovered_nodes
+          |> Enum.reject(fn {discovered_node_id, _} -> discovered_node_id == node_id end)
+          |> Enum.map(fn {discovered_node_id, _region} ->
+            {discovered_node_id, %{status: :unknown, latency: nil}}
+          end)
+          |> Enum.into(%{})
 
-    # **LOGIC CHANGE**: Query Corrosion for existing nodes immediately
-    discovered_nodes = discover_existing_nodes()
+        # **LOGIC CHANGE**: Include our own node in the regions map
+        node_regions = Map.put(discovered_nodes, node_id, Application.get_env(:where_corro, :fly_region, "local"))
 
-    initial_node_statuses =
-      discovered_nodes
-      |> Enum.reject(fn {discovered_node_id, _} -> discovered_node_id == node_id end)
-      |> Enum.map(fn {discovered_node_id, region} ->
-        {discovered_node_id, %{status: :unknown, latency: nil}}
-      end)
-      |> Enum.into(%{})
+        {:ok,
+         assign(socket,
+           node_id: node_id,
+           local_region: Application.get_env(:where_corro, :fly_region, "local"),
+           sending: false,
+           last_sent_message: nil,
+           node_statuses: initial_node_statuses,
+           received_messages: %{},
+           node_regions: node_regions,
+           other_regions: [],
+           corro_regions: [],
+           discovered_nodes: discovered_nodes
+         )}
 
-    updated_regions = discovered_nodes |> Enum.into(node_regions)
+      {:error, reason} ->
+        Logger.warning("Node discovery failed: #{inspect(reason)}")
 
-    {:ok,
-     assign(socket,
-       node_id: node_id,
-       local_region: Application.fetch_env!(:where_corro, :fly_region),
-       sending: false,
-       last_sent_message: nil,
-       node_statuses: initial_node_statuses,
-       received_messages: %{},
-       node_regions: updated_regions,
-       other_regions: [],
-       corro_regions: [],
-       # **NEW**: Track discovered nodes for debugging
-       discovered_nodes: discovered_nodes
-     )}
+        # **LOGIC CHANGE**: Fallback to empty state but still functional
+        node_regions = %{node_id => Application.get_env(:where_corro, :fly_region, "local")}
+
+        {:ok,
+         assign(socket,
+           node_id: node_id,
+           local_region: Application.get_env(:where_corro, :fly_region, "local"),
+           sending: false,
+           last_sent_message: nil,
+           node_statuses: %{},
+           received_messages: %{},
+           node_regions: node_regions,
+           other_regions: [],
+           corro_regions: [],
+           discovered_nodes: %{}
+         )}
+    end
   end
 
   # Handle button click
@@ -396,8 +415,20 @@ end
 
   # **NEW**: Extract region from node ID (Fly.io machine IDs don't contain region, so this is a fallback)
   defp extract_region_from_node_id(node_id) do
-    # For local development
-    if node_id == "localhost", do: "💻", else: "unknown"
+    case Application.get_env(:where_corro, :local_cluster_mode, false) do
+      true ->
+        # **LOGIC CHANGE**: Look up region from local cluster config
+        local_cluster_nodes = Application.get_env(:where_corro, :local_cluster_nodes, [])
+
+        case Enum.find(local_cluster_nodes, fn node -> node.node_id == node_id end) do
+          %{region: region} -> region
+          nil -> "unknown"
+        end
+
+      false ->
+        # **LOGIC CHANGE**: Keep existing logic for production
+        if node_id == "localhost", do: "💻", else: "unknown"
+    end
   end
 
   # Private helpers
@@ -444,20 +475,27 @@ end
 
   # Node discovery helpers
   defp discover_nodes_in_regions(regions) do
-    Logger.debug("discover_nodes_in_regions called")
-    app_name = Application.get_env(:where_corro, :fly_app_name, "where-corro")
+    case Application.get_env(:where_corro, :local_cluster_mode, false) do
+      true ->
+        # **LOGIC CHANGE**: In local mode, map regions to our configured nodes
+        local_cluster_nodes = Application.get_env(:where_corro, :local_cluster_nodes, [])
 
-    # Query DNS for instances
-    case get_instances_from_dns(app_name) do
-      {:ok, instances} ->
-        # Filter by regions and create node_id => region map
-        instances |> dbg
-        |> Enum.filter(fn {_, region} -> region in regions end)
-        |> Enum.into(%{}) |> dbg
+        local_cluster_nodes
+        |> Enum.filter(fn node -> node.region in regions end)
+        |> Enum.map(fn node -> {node.node_id, node.region} end)
+        |> Enum.into(%{})
 
-      {:error, _} ->
-        # Fallback: empty map
-        %{}
+      false ->
+        # **LOGIC CHANGE**: Keep existing DNS-based discovery for production
+        case get_instances_from_dns(Application.get_env(:where_corro, :fly_app_name, "where-corro")) do
+          {:ok, instances} ->
+            instances
+            |> Enum.filter(fn {_, region} -> region in regions end)
+            |> Enum.into(%{})
+
+          {:error, _} ->
+            %{}
+        end
     end
   end
 
