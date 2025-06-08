@@ -8,6 +8,7 @@ defmodule WhereCorro.Propagation.Acknowledgment do
   def send_ack(sender_node_id, sequence, receiver_node_id) do
     # Record that we need to send this ack
     ack_id = "#{sender_node_id}:#{sequence}:#{receiver_node_id}"
+      Logger.info("🚀 Starting ack process: #{ack_id}")
 
     transactions = [
       """
@@ -24,16 +25,23 @@ defmodule WhereCorro.Propagation.Acknowledgment do
     # Start async ack process
     Task.Supervisor.start_child(
       WhereCorro.TaskSupervisor,
-      fn -> send_with_retry(sender_node_id, sequence, receiver_node_id, 1) end
+      fn ->
+        Logger.info("📡 Async ack task started for #{ack_id}")
+        send_with_retry(sender_node_id, sequence, receiver_node_id, 1) end
     )
   end
 
   defp send_with_retry(sender_node_id, sequence, receiver_node_id, attempt) do
+    ack_id = "#{sender_node_id}:#{sequence}:#{receiver_node_id}"
+    Logger.info("🔄 Ack attempt #{attempt} for #{ack_id}")
+
     case call_ack_api(sender_node_id, sequence, receiver_node_id) do
       :ok ->
+        Logger.info("✅ Ack succeeded for #{ack_id}")
         mark_success(sender_node_id, sequence, receiver_node_id)
 
       :error when attempt < @max_attempts ->
+        Logger.warning("⚠️  Ack attempt #{attempt} failed for #{ack_id}, retrying...")
         update_attempts(sender_node_id, sequence, receiver_node_id, attempt)
         backoff = min(@initial_backoff * :math.pow(2, attempt), @max_backoff)
         Process.sleep(round(backoff))
@@ -50,6 +58,8 @@ defmodule WhereCorro.Propagation.Acknowledgment do
 
     url = "#{base_url}/api/acknowledgment"
 
+    Logger.info("🌐 Sending ack HTTP request to: #{url}")
+
     body =
       Jason.encode!(%{
         sequence: sequence,
@@ -58,15 +68,23 @@ defmodule WhereCorro.Propagation.Acknowledgment do
       })
 
     case Finch.build(:post, url, [{"content-type", "application/json"}], body)
-         |> Finch.request(WhereCorro.Finch) do
-      {:ok, %{status: status}} when status in 200..299 ->
-        Logger.info("Successfully sent ack to #{sender_node_id} for message #{sequence}")
-        :ok
+       |> Finch.request(WhereCorro.Finch) do
+        {:ok, %{status: status}} when status in 200..299 ->
+          Logger.info("✅ HTTP ack successful to #{sender_node_id} (status: #{status})")
+          :ok
 
-      error ->
-        Logger.warning("Failed to send ack: #{inspect(error)}")
-        :error
-    end
+        {:ok, %{status: status, body: response_body}} ->
+          Logger.warning("❌ HTTP ack failed to #{sender_node_id} (status: #{status}, body: #{inspect(response_body)})")
+          :error
+
+        {:error, %Mint.TransportError{reason: reason}} ->
+          Logger.warning("🔌 Network error sending ack to #{sender_node_id}: #{inspect(reason)}")
+          :error
+
+        {:error, reason} ->
+          Logger.warning("💥 Unexpected error sending ack to #{sender_node_id}: #{inspect(reason)}")
+          :error
+      end
   end
 
   defp app_name do
